@@ -14,11 +14,14 @@ namespace MatinPower.Server.Controllers.Admin
         {
             var result = Repository<Models.CustomersLegal>.GetSelectiveListWithPaging(i => new
             {
-                i.CustomersLegal.Id,
-                FamiliarityTitle = i.FamiliarityType.HasValue ? i.FamiliarityTypeNavigation!.Title : string.Empty,
+                i.Id,
                 i.NationalId,
                 i.CeoFullName,
-                i.CompanyName
+                i.CompanyName,
+                i.CeoMobile,
+                i.IsActive,
+                i.FamiliarityType,
+                i.CustomerTypeId,
             }, filter, predicate, sortExpression: "CreatedAt", sortDirection: System.Web.Helpers.SortDirection.Descending);
 
             return new PaginationResult(result.Item1, filter.PageNumber, filter.PageSize, result.Item2, result.Item3, result.Item4);
@@ -29,7 +32,6 @@ namespace MatinPower.Server.Controllers.Admin
             get
             {
                 Expression<Func<Models.CustomersLegal, bool>> result = i => true;
-                result = result.AppendCondition(s => s.CustomerTypeId == 2, false);
                 string? companyName = UrlArgument<string?>("Search_CompanyName");
                 if (!string.IsNullOrEmpty(companyName))
                     result = result.AppendCondition(s => s.CompanyName.Contains(companyName), false);

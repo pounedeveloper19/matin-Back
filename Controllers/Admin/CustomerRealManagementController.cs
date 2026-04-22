@@ -14,10 +14,13 @@ namespace MatinPower.Server.Controllers.Admin
             var result = Repository<Models.CustomersReal>.GetSelectiveListWithPaging(i => new
             {
                 i.Id,
-                FamiliarityTitle = i.FamiliarityType.HasValue ? i.FamiliarityTypeNavigation!.Title : string.Empty,
                 i.NationalCode,
-                Fullname = i.FirstName + " - " + i.LastName,
-                i.Mobile
+                i.FirstName,
+                i.LastName,
+                i.Mobile,
+                i.IsActive,
+                i.FamiliarityType,
+                i.CustomerTypeId,
             }, filter, predicate, sortExpression: "CreatedAt", sortDirection: System.Web.Helpers.SortDirection.Descending);
 
             return new PaginationResult(result.Item1, filter.PageNumber, filter.PageSize, result.Item2, result.Item3, result.Item4);
@@ -28,7 +31,7 @@ namespace MatinPower.Server.Controllers.Admin
             get
             {
                 Expression<Func<Models.CustomersReal, bool>> result = i => true;
-                result = result.AppendCondition(s => s.CustomerTypeId == 2, false);
+                result = result.AppendCondition(s => s.CustomerTypeId == 1, false);
                 string? firstName = UrlArgument<string?>("Search_FirstName");
                 if (!string.IsNullOrEmpty(firstName))
                     result = result.AppendCondition(s => s.FirstName.Contains(firstName), false);
