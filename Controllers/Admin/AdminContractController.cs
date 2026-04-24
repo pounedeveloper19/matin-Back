@@ -20,10 +20,27 @@ namespace MatinPower.Server.Controllers.Admin
                 i.ContractNumber,
                 StartDate = PersianDateConverter.ToPersianDate(i.StartDate),
                 EndDate = PersianDateConverter.ToPersianDate(i.EndDate),
-            }, filter, predicate, sortExpression: "StartDate", sortDirection: System.Web.Helpers.SortDirection.Descending);
+                WarrantyFileId = i.Warranties.OrderByDescending(w => w.Date).Select(w => w.FileId).FirstOrDefault(),
+            }, filter, predicate, sortExpression: "StartDate", sortDirection: System.Web.Helpers.SortDirection.Descending, includes: new[] { "Subscription.Address.CustomerProfile.CustomersLegal", "Status" });
 
             return new PaginationResult(result.Item1, filter.PageNumber, filter.PageSize, result.Item2, result.Item3, result.Item4);
         }
+        protected override Contract GetItem(int id)
+        {
+            var contract = id == 0 ? new Contract() : Repository<Contract>.GetItemById(id);
+            if (id != 0)
+            {
+                var warranty = Repository<Warranty>.GetLast(i => i.ContractId == id);
+                if (warranty != null)
+                {
+                    contract.Amount = warranty.Amount;
+                    contract.TypeId = warranty.TypeId;
+                    contract.FileId = warranty.FileId;
+                }
+            }
+            return contract;
+        }
+
         public override ExecutionResult Insert([FromBody] Contract item)
         {
             if (!ModelState.IsValid)
@@ -32,13 +49,18 @@ namespace MatinPower.Server.Controllers.Admin
             {
                 var contract = Repository<Contract>.InsertItem(new Contract
                 {
-                    ContractNumber = item.ContractNumber,
                     ContractRate = item.ContractRate,
                     StartDate = item.StartDate,
                     EndDate = item.EndDate,
                     StatusId = 1,
                     SubscriptionId = item.SubscriptionId
                 });
+
+                var pc = new System.Globalization.PersianCalendar();
+                var now = DateTime.Now;
+                contract.ContractNumber = $"CNT-{pc.GetYear(now)}{pc.GetMonth(now):00}-{contract.Id:00000}";
+                Repository<Contract>.UpdateItem(contract);
+
                 Repository<Warranty>.InsertItem(new Warranty
                 {
                     ContractId = contract.Id,

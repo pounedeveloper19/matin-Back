@@ -27,29 +27,27 @@ namespace MatinPower.Server.Controllers.Customer
             if (req.Month < 1 || req.Month > 12)
                 return new ExecutionResult(ResultType.Danger, "خطای ورود", "ماه باید بین ۱ تا ۱۲ باشد.", 400);
 
+            var subscription = Repository<Subscription>.GetLast(i => i.Id == req.SubscriptionId);
+            if (subscription == null)
+                return new ExecutionResult(ResultType.Danger, "خطا", "اشتراک یافت نشد.", 404);
+
+            decimal contractCapacity = subscription.ContractCapacityKw ?? 0m;
+            if (contractCapacity <= 0)
+                return new ExecutionResult(ResultType.Danger, "خطا", "قدرت قراردادی اشتراک تنظیم نشده است.", 400);
+
+            var marketRate = Repository<MonthlyMarketRate>.GetLast(i =>
+                i.Year == req.Year && i.Month == req.Month);
+            if (marketRate == null)
+                return new ExecutionResult(ResultType.Danger, "خطا",
+                    $"نرخ بازار برای {JalaliMonths[req.Month]} {req.Year} ثبت نشده است.", 404);
+
             return RunExceptionProof(() =>
             {
-                // 1. اشتراک
-                var subscription = Repository<Subscription>.GetLast(i => i.Id == req.SubscriptionId);
-                if (subscription == null)
-                    return new ExecutionResult(ResultType.Danger, "خطا", "اشتراک یافت نشد.", 404);
-
-                decimal contractCapacity = subscription.ContractCapacityKw ?? 0;
-                if (contractCapacity <= 0)
-                    return new ExecutionResult(ResultType.Danger, "خطا", "قدرت قراردادی اشتراک تنظیم نشده است.", 400);
-
                 // 2. قرارداد فعال
                 var contract = Repository<Contract>.GetLast(i => i.SubscriptionId == req.SubscriptionId);
                 decimal contractRate = contract?.ContractRate ?? 0;
 
-                // 3. نرخ‌های ماه
-                var marketRate = Repository<MonthlyMarketRate>.GetLast(i =>
-                    i.Year == req.Year && i.Month == req.Month);
-                if (marketRate == null)
-                    return new ExecutionResult(ResultType.Danger, "خطا",
-                        $"نرخ بازار برای {JalaliMonths[req.Month]} {req.Year} ثبت نشده است.", 404);
-
-                // 4. ساعات TOU از جدول برنامه (Touschedule)
+                // ساعات TOU از جدول برنامه (Touschedule)
                 var address = Repository<Address>.GetLast(i => i.Id == subscription.AddressId);
                 int powerEntityId = address?.PowerEntityId ?? 0;
 
@@ -186,7 +184,7 @@ namespace MatinPower.Server.Controllers.Customer
                     SavingPercent        = Math.Round(savingPercent, 2),
                 };
 
-                return new ExecutionResult(ResultType.Success, null, null, 200, result);
+                return (object)result;
             });
         }
 
@@ -212,7 +210,7 @@ namespace MatinPower.Server.Controllers.Customer
                     },
                     i => i.SubscriptionId == subscriptionId);
 
-                return new ExecutionResult(ResultType.Success, null, null, 200, reports);
+                return (object)reports;
             });
         }
     }

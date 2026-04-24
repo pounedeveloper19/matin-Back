@@ -1,7 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Configuration;
 
 namespace MatinPower.Server.Models;
 
@@ -100,29 +99,20 @@ public partial class MatinPowerDbContext : DbContext
 
     protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
     {
-        if (!optionsBuilder.IsConfigured)
-        {
-            // Fallback: read from appsettings.json when DI is not available (e.g. EF migrations)
-            var configuration = new ConfigurationBuilder()
-                .SetBasePath(AppDomain.CurrentDomain.BaseDirectory)
-                .AddJsonFile("appsettings.json", optional: false)
-                .Build();
-
-            optionsBuilder.UseSqlServer(
-                configuration.GetConnectionString("SqlServerConnection"),
-                sql => sql.CommandTimeout(60));
-        }
+        IConfigurationRoot configuration = new ConfigurationBuilder()
+                   .SetBasePath(AppDomain.CurrentDomain.BaseDirectory)
+                   .AddJsonFile("appsettings.json")
+                   .Build();
+        optionsBuilder.UseSqlServer(configuration.GetConnectionString("SqlServerConnection"));
+        //optionsBuilder.UseLazyLoadingProxies();
     }
-
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<Address>(entity =>
         {
             entity.ToTable("Address");
 
-            entity.Property(e => e.MainAddress)
-                .HasMaxLength(250)
-                .HasColumnName("MainAddress");
+            entity.Property(e => e.MainAddress).HasMaxLength(250);
             entity.Property(e => e.PostalCode).HasMaxLength(10);
 
             entity.HasOne(d => d.City).WithMany(p => p.Addresses)
@@ -155,6 +145,8 @@ public partial class MatinPowerDbContext : DbContext
 
             entity.Property(e => e.BillNumber).HasMaxLength(50);
             entity.Property(e => e.CreatedAt).HasDefaultValueSql("(sysdatetime())");
+            entity.Property(e => e.PeriodEnd).HasColumnType("datetime");
+            entity.Property(e => e.PeriodStart).HasColumnType("datetime");
             entity.Property(e => e.TotalAmount).HasColumnType("decimal(18, 2)");
 
             entity.HasOne(d => d.Subscription).WithMany(p => p.Bills)
@@ -220,6 +212,8 @@ public partial class MatinPowerDbContext : DbContext
 
             entity.Property(e => e.ContractNumber).HasMaxLength(100);
             entity.Property(e => e.ContractRate).HasColumnType("decimal(18, 4)");
+            entity.Property(e => e.EndDate).HasColumnType("datetime");
+            entity.Property(e => e.StartDate).HasColumnType("datetime");
 
             entity.HasOne(d => d.Status).WithMany(p => p.Contracts)
                 .HasForeignKey(d => d.StatusId)
@@ -234,65 +228,50 @@ public partial class MatinPowerDbContext : DbContext
 
         modelBuilder.Entity<CustomerProfile>(entity =>
         {
-            entity.HasKey(e => e.Id).HasName("PK__Customer__3214EC078F551B0E");
+            entity.ToTable("CustomerProfiles");
+            entity.HasKey(e => e.Id);
 
             entity.Property(e => e.IsActive).HasDefaultValue(true);
 
             entity.HasOne(d => d.CustomerType).WithMany(p => p.CustomerProfiles)
                 .HasForeignKey(d => d.CustomerTypeId)
-                .OnDelete(DeleteBehavior.ClientSetNull)
-                .HasConstraintName("FK__CustomerP__Custo__4CA06362");
+                .OnDelete(DeleteBehavior.ClientSetNull);
 
             entity.HasOne(d => d.FamiliarityTypeNavigation).WithMany(p => p.CustomerProfiles)
-                .HasForeignKey(d => d.FamiliarityType)
-                .HasConstraintName("FK_CustomerProfiles_EnumFamiliarityType");
+                .HasForeignKey(d => d.FamiliarityType);
         });
 
         modelBuilder.Entity<CustomersLegal>(entity =>
         {
-            entity.HasKey(e => e.Id).HasName("PK__Customer__3214EC075EFECAA8");
-
             entity.ToTable("Customers_Legal");
-
-            entity.HasIndex(e => e.NationalId, "UQ__Customer__E9AA32FADC18EAC3").IsUnique();
-
-            entity.Property(e => e.Id).ValueGeneratedNever();
-            entity.Property(e => e.CeoFullName)
-                .HasMaxLength(100)
-                .HasColumnName("CEO_FullName");
-            entity.Property(e => e.CeoMobile)
-                .HasMaxLength(11)
-                .HasColumnName("CEO_Mobile");
+            entity.HasIndex(e => e.NationalId).IsUnique();
+            entity.Property(e => e.CeoFullName).HasMaxLength(100).HasColumnName("CEO_FullName");
+            entity.Property(e => e.CeoMobile).HasMaxLength(11).HasColumnName("CEO_Mobile");
             entity.Property(e => e.CompanyName).HasMaxLength(200);
             entity.Property(e => e.CreatedAt).HasDefaultValueSql("(getdate())");
             entity.Property(e => e.EconomicCode).HasMaxLength(20);
             entity.Property(e => e.NationalId).HasMaxLength(12);
 
-            entity.HasOne(d => d.IdNavigation).WithOne(p => p.CustomersLegal)
-                .HasForeignKey<CustomersLegal>(d => d.Id)
-                .OnDelete(DeleteBehavior.ClientSetNull)
-                .HasConstraintName("FK__Customers_Le__Id__5629CD9C");
+            entity.HasOne(d => d.CustomerProfile)
+                  .WithOne(p => p.CustomersLegal)
+                  .HasForeignKey<CustomersLegal>(d => d.Id)
+                  .OnDelete(DeleteBehavior.Cascade);
         });
 
         modelBuilder.Entity<CustomersReal>(entity =>
         {
-            entity.HasKey(e => e.Id).HasName("PK__Customer__3214EC072DEF967E");
-
             entity.ToTable("Customers_Real");
-
-            entity.HasIndex(e => e.NationalCode, "UQ__Customer__3DFA4106DDBFA884").IsUnique();
-
-            entity.Property(e => e.Id).ValueGeneratedNever();
+            entity.HasIndex(e => e.NationalCode).IsUnique();
             entity.Property(e => e.CreatedAt).HasDefaultValueSql("(getdate())");
             entity.Property(e => e.FirstName).HasMaxLength(150);
             entity.Property(e => e.LastName).HasMaxLength(150);
             entity.Property(e => e.Mobile).HasMaxLength(11);
             entity.Property(e => e.NationalCode).HasMaxLength(10);
 
-            entity.HasOne(d => d.IdNavigation).WithOne(p => p.CustomersReal)
-                .HasForeignKey<CustomersReal>(d => d.Id)
-                .OnDelete(DeleteBehavior.ClientSetNull)
-                .HasConstraintName("FK__Customers_Re__Id__5165187F");
+            entity.HasOne(d => d.CustomerProfile)
+                  .WithOne(p => p.CustomersReal)
+                  .HasForeignKey<CustomersReal>(d => d.Id)
+                  .OnDelete(DeleteBehavior.Cascade);
         });
 
         modelBuilder.Entity<ElectricityOrder>(entity =>
@@ -664,7 +643,7 @@ public partial class MatinPowerDbContext : DbContext
             entity.Property(e => e.FullName).HasMaxLength(200);
             entity.Property(e => e.IsActive).HasDefaultValue(true);
             entity.Property(e => e.Mobile).HasMaxLength(20);
-            entity.Property(e => e.Password).HasMaxLength(10);
+            entity.Property(e => e.Password).HasMaxLength(250);
 
             entity.HasOne(d => d.CustomerProfile).WithMany(p => p.Users)
                 .HasForeignKey(d => d.CustomerProfileId)
@@ -688,6 +667,7 @@ public partial class MatinPowerDbContext : DbContext
             entity.ToTable("Warranty");
 
             entity.Property(e => e.Amount).HasColumnType("decimal(18, 2)");
+            entity.Property(e => e.Date).HasColumnType("datetime");
 
             entity.HasOne(d => d.Contract).WithMany(p => p.Warranties)
                 .HasForeignKey(d => d.ContractId)

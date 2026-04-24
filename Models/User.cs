@@ -9,13 +9,13 @@ public partial class User
 
     public int? CustomerProfileId { get; set; }
 
-    public string? FullName { get; set; }
+    public string FullName { get; set; } = null!;
 
     public string Mobile { get; set; } = null!;
 
     public bool? IsActive { get; set; }
 
-    public string? Password { get; set; }
+    public string Password { get; set; } = null!;
 
     public virtual CustomerProfile? CustomerProfile { get; set; }
 

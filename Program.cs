@@ -46,8 +46,29 @@ try
         options.EnableForHttps = true;
     });
 
+    // File storage database (separate from main DB)
+    builder.Services.AddDbContext<MatinPower.Server.Models.FileStorage.FileDbContext>(options =>
+        options.UseSqlServer(configuration.GetConnectionString("FileDbConnection")));
+
+    // Allow multipart upload up to 50 MB
+    builder.Services.Configure<Microsoft.AspNetCore.Http.Features.FormOptions>(o =>
+    {
+        o.MultipartBodyLengthLimit = 50 * 1024 * 1024;
+    });
+    builder.WebHost.ConfigureKestrel(o =>
+    {
+        o.Limits.MaxRequestBodySize = 50 * 1024 * 1024;
+    });
+
     // Add services to the container.
-    builder.Services.AddControllers();
+    builder.Services.AddControllers(options =>
+    {
+        // EF entities are used directly as API models; navigation properties
+        // are non-nullable reference types but arrive null in JSON payloads.
+        // Without this, ModelState.IsValid returns false for every entity with
+        // a required navigation property (e.g. Contract.Status, Contract.Subscription).
+        options.SuppressImplicitRequiredAttributeForNonNullableReferenceTypes = true;
+    });
     builder.Services.AddEndpointsApiExplorer();
     builder.Services.AddSwaggerGen(c =>
     {
@@ -131,28 +152,6 @@ try
     app.UseStaticFiles();
 
 
-    // --------------------------------------------------------
-    // 🔥 Error Handling – Equivalent of customErrors in Web.config
-    // --------------------------------------------------------
-
-    // InternalError (500)
-    app.UseExceptionHandler("/error/InternalError");
-
-    // 404 Page Not Found
-    app.UseStatusCodePagesWithReExecute("/error/PageNotFound");
-
-    // 403 Forbidden
-    app.UseStatusCodePages(async context =>
-    {
-        if (context.HttpContext.Response.StatusCode == 403)
-        {
-            context.HttpContext.Response.Redirect("/error/Forbidden");
-        }
-    });
-
-    // --------------------------------------------------------
-
-
     // Configure the HTTP request pipeline.
     // Swagger enabled in all environments for API testing
     {
@@ -173,12 +172,11 @@ try
         .AllowAnyMethod();
     });
 
-    app.UseHttpsRedirection();
     app.UseAuthentication();
     app.UseAuthorization();
 
     app.MapControllers();
-
+    app.MapFallbackToFile("index.html");
     app.Run();
 }
 catch (Exception exception)

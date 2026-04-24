@@ -3,9 +3,9 @@ using System.Collections.Generic;
 
 namespace MatinPower.Server.Models;
 
-public partial class CustomersReal : CustomerProfile
+public partial class CustomersReal
 {
-
+    public int Id { get; set; }
     public string FirstName { get; set; } = null!;
 
     public string LastName { get; set; } = null!;
@@ -16,5 +16,5 @@ public partial class CustomersReal : CustomerProfile
 
     public DateTime? CreatedAt { get; set; }
 
-    public virtual CustomerProfile IdNavigation { get; set; } = null!;
+    public virtual CustomerProfile CustomerProfile { get; set; } = null!;
 }

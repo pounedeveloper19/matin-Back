@@ -11,9 +11,9 @@ public partial class Bill
 
     public string? BillNumber { get; set; }
 
-    public DateOnly? PeriodStart { get; set; }
+    public DateTime? PeriodStart { get; set; }
 
-    public DateOnly? PeriodEnd { get; set; }
+    public DateTime? PeriodEnd { get; set; }
 
     public int? TotalConsumption { get; set; }
 
@@ -22,6 +22,8 @@ public partial class Bill
     public int TariffId { get; set; }
 
     public DateTime? CreatedAt { get; set; }
+
+    public Guid? BillScanFileId { get; set; }
 
     public virtual ICollection<BillUsingByTou> BillUsingByTous { get; set; } = new List<BillUsingByTou>();
 

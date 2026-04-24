@@ -19,6 +19,8 @@ public partial class Contract
 
     public int StatusId { get; set; }
 
+    public Guid? FileId { get; set; }
+
     public virtual EnumContractStatus Status { get; set; } = null!;
 
     public virtual Subscription Subscription { get; set; } = null!;

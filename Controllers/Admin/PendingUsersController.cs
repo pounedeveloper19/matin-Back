@@ -38,19 +38,19 @@ namespace MatinPower.Server.Controllers.Admin
                     .OrderByDescending(u => u.Id)
                     .ToList();
 
-                return new ExecutionResult(ResultType.Success, null, null, 200, users);
+                return (object)users;
             });
         }
 
         [HttpPut("Activate/{userId}")]
         public ExecutionResult Activate(int userId)
         {
+            var user = Repository<User>.GetLast(u => u.Id == userId);
+            if (user == null)
+                return new ExecutionResult(ResultType.Danger, "خطا", "کاربر یافت نشد.", 404);
+
             return RunExceptionProof(() =>
             {
-                var user = Repository<User>.GetLast(u => u.Id == userId);
-                if (user == null)
-                    return new ExecutionResult(ResultType.Danger, "خطا", "کاربر یافت نشد.", 404);
-
                 user.IsActive = true;
                 Repository<User>.UpdateItem(user);
 
@@ -63,21 +63,20 @@ namespace MatinPower.Server.Controllers.Admin
                         Repository<CustomerProfile>.UpdateItem(profile);
                     }
                 }
-
-                return new ExecutionResult(ResultType.Success, "موفق", "کاربر با موفقیت فعال شد.", 200);
             });
         }
 
         [HttpDelete("Reject/{userId}")]
         public ExecutionResult Reject(int userId)
         {
+            var user = Repository<User>.GetLast(u => u.Id == userId);
+            if (user == null)
+                return new ExecutionResult(ResultType.Danger, "خطا", "کاربر یافت نشد.", 404);
+
+            var profileId = user.CustomerProfileId;
+
             return RunExceptionProof(() =>
             {
-                var user = Repository<User>.GetLast(u => u.Id == userId);
-                if (user == null)
-                    return new ExecutionResult(ResultType.Danger, "خطا", "کاربر یافت نشد.", 404);
-
-                var profileId = user.CustomerProfileId;
                 Repository<User>.DeleteItem(user);
 
                 if (profileId.HasValue)
@@ -91,8 +90,6 @@ namespace MatinPower.Server.Controllers.Admin
                     var profile = Repository<CustomerProfile>.GetLast(p => p.Id == profileId);
                     if (profile != null) Repository<CustomerProfile>.DeleteItem(profile);
                 }
-
-                return new ExecutionResult(ResultType.Success, "موفق", "درخواست رد شد.", 200);
             });
         }
     }

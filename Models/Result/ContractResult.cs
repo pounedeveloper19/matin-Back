@@ -14,9 +14,12 @@
 
         public string EndDate { get; set; }
 
+        public int StatusId { get; set; }
         public string Status { get; set; }
         public string Address { get; set; }
         public decimal WarrantyAmount { get; set; }
         public string WarrantyType { get; set; }
+        public int WarrantyTypeId { get; set; }
+        public string? WarrantyFileId { get; set; }
     }
 }

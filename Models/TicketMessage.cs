@@ -15,6 +15,8 @@ public partial class TicketMessage
 
     public DateTime? CreatedAt { get; set; }
 
+    public Guid? FileId { get; set; }
+
     public virtual User SenderUser { get; set; } = null!;
 
     public virtual Ticket Ticket { get; set; } = null!;

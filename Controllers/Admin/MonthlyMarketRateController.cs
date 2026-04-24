@@ -57,7 +57,7 @@ namespace MatinPower.Server.Controllers.Admin
                 int year  = UrlArgument<int>("year");
                 int month = UrlArgument<int>("month");
                 var rate  = Repository<MonthlyMarketRate>.GetLast(i => i.Year == year && i.Month == month);
-                return new ExecutionResult(ResultType.Success, null, null, 200, rate);
+                return (object)rate;
             });
         }
     }

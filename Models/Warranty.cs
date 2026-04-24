@@ -14,7 +14,8 @@ public partial class Warranty
     public int TypeId { get; set; }
 
     public Guid? FileId { get; set; }
-    public DateTime Date { get; set; }
+
+    public DateTime? Date { get; set; }
 
     public virtual Contract Contract { get; set; } = null!;
 

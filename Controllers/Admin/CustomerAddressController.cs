@@ -19,7 +19,7 @@ namespace MatinPower.Server.Controllers.Admin
                 Province = i.City.Province.Name,
                 i.PostalCode,
                 i.MainAddress,
-            }, filter, predicate, sortExpression: "PostalCode", sortDirection: System.Web.Helpers.SortDirection.Descending);
+            }, filter, predicate, sortExpression: "PostalCode", sortDirection: System.Web.Helpers.SortDirection.Descending, includes: new[] { "City", "City.Province" });
 
             return new PaginationResult(result.Item1, filter.PageNumber, filter.PageSize, result.Item2, result.Item3, result.Item4);
         }
@@ -28,7 +28,7 @@ namespace MatinPower.Server.Controllers.Admin
         {
             get
             {
-                long? parentId = UrlArgument<long?>("parentId");
+                int? parentId = UrlArgument<int?>("parentId");
 
                 Expression<Func<Address, bool>> result = s => s.CustomerProfileId == parentId;
 

@@ -27,14 +27,15 @@ namespace MatinPower.Server.Controllers.Auth
 
             return RunExceptionProof(() =>
             {
-                var profile = Repository<CustomerProfile>.InsertItem(new CustomerProfile
+                var profile = new CustomerProfile
                 {
                     CustomerTypeId = 1,
                     IsActive = false,
                     FamiliarityType = model.FamiliarityType > 0 ? model.FamiliarityType : (int?)null,
-                });
+                };
+                Repository<CustomerProfile>.InsertItem(profile);
 
-                Repository<CustomersReal>.InsertItem(new CustomersReal
+                var realCustomer = new CustomersReal
                 {
                     Id = profile.Id,
                     NationalCode = model.NationalCode,
@@ -42,10 +43,8 @@ namespace MatinPower.Server.Controllers.Auth
                     LastName = model.LastName,
                     Mobile = model.Mobile,
                     CreatedAt = DateTime.Now,
-                    IsActive = false,
-                    FamiliarityType = model.FamiliarityType > 0 ? model.FamiliarityType : (int?)null,
-                    CustomerTypeId = 1,
-                });
+                };
+                Repository<CustomersReal>.InsertItem(realCustomer);
 
                 Repository<User>.InsertItem(new User
                 {
@@ -55,8 +54,6 @@ namespace MatinPower.Server.Controllers.Auth
                     IsActive = false,
                     CustomerProfileId = profile.Id,
                 });
-
-                return new ExecutionResult(ResultType.Success, null, null, 200);
             });
         }
 
@@ -77,14 +74,15 @@ namespace MatinPower.Server.Controllers.Auth
 
             return RunExceptionProof(() =>
             {
-                var profile = Repository<CustomerProfile>.InsertItem(new CustomerProfile
+                var profile = new CustomerProfile
                 {
                     CustomerTypeId = 2,
                     IsActive = false,
                     FamiliarityType = model.FamiliarityType > 0 ? model.FamiliarityType : (int?)null,
-                });
+                };
+                Repository<CustomerProfile>.InsertItem(profile);
 
-                Repository<CustomersLegal>.InsertItem(new CustomersLegal
+                var legalCustomer = new CustomersLegal
                 {
                     Id = profile.Id,
                     NationalId = model.NationalId,
@@ -93,10 +91,8 @@ namespace MatinPower.Server.Controllers.Auth
                     CeoFullName = model.CeoFullName,
                     CeoMobile = model.CeoMobile,
                     CreatedAt = DateTime.Now,
-                    IsActive = false,
-                    FamiliarityType = model.FamiliarityType > 0 ? model.FamiliarityType : (int?)null,
-                    CustomerTypeId = 2,
-                });
+                };
+                Repository<CustomersLegal>.InsertItem(legalCustomer);
 
                 Repository<User>.InsertItem(new User
                 {
@@ -106,8 +102,6 @@ namespace MatinPower.Server.Controllers.Auth
                     IsActive = false,
                     CustomerProfileId = profile.Id,
                 });
-
-                return new ExecutionResult(ResultType.Success, null, null, 200);
             });
         }
     }

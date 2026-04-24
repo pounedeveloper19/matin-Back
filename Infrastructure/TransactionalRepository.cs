@@ -16,30 +16,30 @@ namespace TicketManagement.Infrastructure
         readonly MatinPowerDbContext _context = new ();
         private IDbContextTransaction? _transaction;
 
-        public (long Id, T Item) SaveItem<T>(T item, EntityState state, bool makeLog = true) where T : class
+        public (int Id, T Item) SaveItem<T>(T item, EntityState state, bool makeLog = true) where T : class
         {
             if (state is EntityState.Modified or EntityState.Added)
                 Repository<T>.GeneralValidation(item);
             _context.Entry(item).State = state;
             if (makeLog)
                 Repository<T>.LogModification(item, state, _context, true);
-            var convertedValue = _context.Entry(item).Properties.First().CurrentValue is long value ? value : throw new InvalidOperationException("Conversion to long failed.");
+            var convertedValue = _context.Entry(item).Properties.First().CurrentValue is int value ? value : throw new InvalidOperationException("Conversion to int failed.");
             return (convertedValue, item);
         }
-        public (T Item, long Id) InsertItem<T>(T item) where T : class
+        public (T Item, int Id) InsertItem<T>(T item) where T : class
         {
-            (long id, T savedItem) = SaveItem(item, EntityState.Added);
+            (int id, T savedItem) = SaveItem(item, EntityState.Added);
             return (savedItem, id);
         }
 
-        public (T Item, long Id) UpdateItem<T>(T item) where T : class
+        public (T Item, int Id) UpdateItem<T>(T item) where T : class
         {
-            (long id, T savedItem) = SaveItem(item, EntityState.Modified);
+            (int id, T savedItem) = SaveItem(item, EntityState.Modified);
             return (savedItem, id);
         }
-        public (T Item, long Id) DeleteItem<T>(T item) where T : class
+        public (T Item, int Id) DeleteItem<T>(T item) where T : class
         {
-            (long id, T savedItem) = SaveItem(item, EntityState.Deleted);
+            (int id, T savedItem) = SaveItem(item, EntityState.Deleted);
             return (savedItem, id);
         }
         public void Commit()

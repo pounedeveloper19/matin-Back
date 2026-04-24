@@ -21,6 +21,8 @@ public partial class Address
 
     public virtual CustomerProfile CustomerProfile { get; set; } = null!;
 
+    public virtual ICollection<CustomerProfile> CustomerProfiles { get; set; } = new List<CustomerProfile>();
+
     public virtual PowerEntity PowerEntity { get; set; } = null!;
 
     public virtual ICollection<Subscription> Subscriptions { get; set; } = new List<Subscription>();

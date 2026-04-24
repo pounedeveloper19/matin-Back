@@ -5,12 +5,14 @@ namespace MatinPower.Infrastructure
     public class BaseController : ControllerBase
     {
 
+        [NonAction]
         public T UrlArgument<T>(string key)
         {
             if (HttpContext.Request.Query[key].Count < 0)
                 return default(T);
             return (T)HttpContext.Request.Query[key].ToString().ChangeType(typeof(T));
         }
+        [NonAction]
         public ExecutionResult RunExceptionProof(Action action, ExecutionResult successResult = null)
         {
             try
@@ -24,6 +26,7 @@ namespace MatinPower.Infrastructure
             }
             return successResult ?? ExecutionResult.Success;
         }
+        [NonAction]
         public ExecutionResult RunExceptionProof(Func<object> function, ExecutionResult successResult = null)
         {
             successResult = successResult ?? ExecutionResult.Success;

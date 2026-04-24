@@ -11,18 +11,17 @@ namespace MatinPower.Server.Controllers.Admin
         [HttpGet("GetMonthSchedule")]
         public ExecutionResult GetMonthSchedule()
         {
+            int powerEntityId = UrlArgument<int>("powerEntityId");
+            int month         = UrlArgument<int>("month");
+
             return RunExceptionProof(() =>
             {
-                int powerEntityId = UrlArgument<int>("powerEntityId");
-                int month         = UrlArgument<int>("month");
-
                 var hours = Repository<Touschedule>
                     .GetListExtended(i => i.PowerEntityId == powerEntityId && i.MonthNumber == month)
-                    .Select(i => new { i.HourNumber, i.ToutypeId })
-                    .OrderBy(i => i.HourNumber)
+                    .Select(i => new { hourNumber = i.HourNumber, toutypeId = i.ToutypeId })
+                    .OrderBy(i => i.hourNumber)
                     .ToList();
-
-                return new ExecutionResult(ResultType.Success, null, null, 200, hours);
+                return (object)hours;
             });
         }
 
@@ -58,11 +57,41 @@ namespace MatinPower.Server.Controllers.Admin
             {
                 var list = Repository<PowerEntity>
                     .GetListExtended(i => i.IsActive == true)
-                    .Select(i => new { i.Id, i.Name })
-                    .OrderBy(i => i.Name)
+                    .Select(i => new { id = i.Id, name = i.Name })
+                    .OrderBy(i => i.name)
                     .ToList();
+                return (object)list;
+            });
+        }
 
-                return new ExecutionResult(ResultType.Success, null, null, 200, list);
+        [HttpPost("CopyFromMonth")]
+        public ExecutionResult CopyFromMonth([FromBody] CopyTouRequest request)
+        {
+            var sourceHours = Repository<Touschedule>
+                .GetListExtended(i => i.PowerEntityId == request.PowerEntityId && i.MonthNumber == request.SourceMonth)
+                .ToList();
+
+            if (!sourceHours.Any())
+                return new ExecutionResult(ResultType.Warning, "هشدار", "ماه مبدأ برنامه‌ای ندارد.", 400);
+
+            return RunExceptionProof(() =>
+            {
+                var existing = Repository<Touschedule>
+                    .GetListExtended(i => i.PowerEntityId == request.PowerEntityId && i.MonthNumber == request.TargetMonth)
+                    .ToList();
+                foreach (var item in existing)
+                    Repository<Touschedule>.DeleteItem(item);
+
+                foreach (var h in sourceHours)
+                {
+                    Repository<Touschedule>.InsertItem(new Touschedule
+                    {
+                        PowerEntityId = request.PowerEntityId,
+                        MonthNumber   = request.TargetMonth,
+                        HourNumber    = h.HourNumber,
+                        ToutypeId     = h.ToutypeId,
+                    });
+                }
             });
         }
 
@@ -73,10 +102,9 @@ namespace MatinPower.Server.Controllers.Admin
             {
                 var list = Repository<EnumToutype>
                     .GetListExtended((System.Linq.Expressions.Expression<Func<EnumToutype, bool>>)null)
-                    .Select(i => new { i.Id, i.Title })
+                    .Select(i => new { id = i.Id, title = i.Title })
                     .ToList();
-
-                return new ExecutionResult(ResultType.Success, null, null, 200, list);
+                return (object)list;
             });
         }
     }
@@ -92,5 +120,12 @@ namespace MatinPower.Server.Controllers.Admin
     {
         public int HourNumber { get; set; }
         public int ToutypeId  { get; set; }
+    }
+
+    public class CopyTouRequest
+    {
+        public int PowerEntityId { get; set; }
+        public int SourceMonth   { get; set; }
+        public int TargetMonth   { get; set; }
     }
 }

@@ -9,12 +9,15 @@ public partial class CustomerProfile
 
     public int CustomerTypeId { get; set; }
 
+    public int? AddressId { get; set; }
+
     public bool? IsActive { get; set; }
 
     public int? FamiliarityType { get; set; }
-    public int AddressId { get; set; }
 
-    public virtual Address Address { get; set; } = null!;
+    public Guid? IdentityDocFileId { get; set; }
+
+    public virtual Address? Address { get; set; }
 
     public virtual ICollection<Address> Addresses { get; set; } = new List<Address>();
 

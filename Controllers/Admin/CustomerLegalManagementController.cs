@@ -19,10 +19,10 @@ namespace MatinPower.Server.Controllers.Admin
                 i.CeoFullName,
                 i.CompanyName,
                 i.CeoMobile,
-                i.IsActive,
-                i.FamiliarityType,
-                i.CustomerTypeId,
-            }, filter, predicate, sortExpression: "CreatedAt", sortDirection: System.Web.Helpers.SortDirection.Descending);
+                i.CustomerProfile.IsActive,
+                i.CustomerProfile.FamiliarityType,
+                i.CustomerProfile.CustomerTypeId,
+            }, filter, predicate, sortExpression: "CreatedAt", sortDirection: System.Web.Helpers.SortDirection.Descending, includes: new[] { "CustomerProfile" });
 
             return new PaginationResult(result.Item1, filter.PageNumber, filter.PageSize, result.Item2, result.Item3, result.Item4);
         }

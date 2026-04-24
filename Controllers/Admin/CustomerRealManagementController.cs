@@ -18,10 +18,10 @@ namespace MatinPower.Server.Controllers.Admin
                 i.FirstName,
                 i.LastName,
                 i.Mobile,
-                i.IsActive,
-                i.FamiliarityType,
-                i.CustomerTypeId,
-            }, filter, predicate, sortExpression: "CreatedAt", sortDirection: System.Web.Helpers.SortDirection.Descending);
+                i.CustomerProfile.IsActive,
+                i.CustomerProfile.FamiliarityType,
+                i.CustomerProfile.CustomerTypeId,
+            }, filter, predicate, sortExpression: "CreatedAt", sortDirection: System.Web.Helpers.SortDirection.Descending, includes: new[] { "CustomerProfile" });
 
             return new PaginationResult(result.Item1, filter.PageNumber, filter.PageSize, result.Item2, result.Item3, result.Item4);
         }
@@ -31,13 +31,10 @@ namespace MatinPower.Server.Controllers.Admin
             get
             {
                 Expression<Func<Models.CustomersReal, bool>> result = i => true;
-                result = result.AppendCondition(s => s.CustomerTypeId == 1, false);
-                string? firstName = UrlArgument<string?>("Search_FirstName");
-                if (!string.IsNullOrEmpty(firstName))
-                    result = result.AppendCondition(s => s.FirstName.Contains(firstName), false);
-                string? lastName = UrlArgument<string?>("Search_LastName");
-                if (!string.IsNullOrEmpty(lastName))
-                    result = result.AppendCondition(s => s.LastName.Contains(lastName), false);
+                result = result.AppendCondition(s => s.CustomerProfile.CustomerTypeId == 1, false);
+                string? name = UrlArgument<string?>("Search_Name");
+                if (!string.IsNullOrEmpty(name))
+                    result = result.AppendCondition(s => s.FirstName.Contains(name) || s.LastName.Contains(name), false);
                 string?nationalCode = UrlArgument<string?>("Search_NationalCode");
                 if (!string.IsNullOrEmpty(nationalCode))
                     result = result.AppendCondition(s => s.NationalCode.Contains(nationalCode), false);

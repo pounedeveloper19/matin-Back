@@ -15,15 +15,15 @@ namespace MatinPower.Server.Controllers.Admin
         {
             var result = Repository<Tariff>.GetSelectiveListWithPaging(i => new
             {
-                Id           = i.TariffId,
+                TariffId = i.TariffId,
                 i.TariffTypeId,
-                TariffType   = i.TariffType.Title,
+                TariffType = i.TariffType.Title,
                 i.CustomerTypeId,
                 CustomerType = i.CustomerType.Title,
                 i.PowerEntitiesId,
-                PowerEntity  = i.PowerEntities.Name,
+                PowerEntity = i.PowerEntities.Name,
                 i.EffectiveFrom,
-            }, filter, predicate, sortExpression: "TariffId", sortDirection: System.Web.Helpers.SortDirection.Descending);
+            }, filter, predicate, sortExpression: "TariffId", sortDirection: System.Web.Helpers.SortDirection.Descending, includes: new[] { "TariffType", "CustomerType", "PowerEntities" });
 
             return new PaginationResult(result.Item1, filter.PageNumber, filter.PageSize, result.Item2, result.Item3, result.Item4);
         }

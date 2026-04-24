@@ -224,7 +224,7 @@ namespace TicketManagement.Infrastructure
         }
 
 
-        public static T GetItemById(long id)
+        public static T GetItemById(int id)
         {
             try
             {
@@ -388,13 +388,13 @@ namespace TicketManagement.Infrastructure
             var recordData = DataDictionary.Create(item, entityType).SerializeToString();
 
             var logger = NLog.LogManager.GetLogger("ModificationLogDataBase");
-            var logEventInfo = new LogEventInfo(NLog.LogLevel.Info, logger.Name, $"ModificationLog - Entity: {entityType.Name}, RecordId: {(long)item.GetType().GetProperty("Id").GetValue(item)}, ChangeType: {state.ToString()}, ChangeTime: {DateTime.Now}, ModifierId: {useContext.GetUserId()}, ClientIp: {useContext.GetUserIp()}");
+            var logEventInfo = new LogEventInfo(NLog.LogLevel.Info, logger.Name, $"ModificationLog - Entity: {entityType.Name}, RecordId: {(int)item.GetType().GetProperty("Id").GetValue(item)}, ChangeType: {state.ToString()}, ChangeTime: {DateTime.Now}, ModifierId: {useContext.GetUserId()}, ClientIp: {useContext.GetUserIp()}");
             logEventInfo.Properties["RecordData"] = recordData;
             logger.Log(logEventInfo);
 
             if (!isTransaction)
             {
-                logger.Info($"ModificationLog - Entity: {entityType.Name}, RecordId: {(long)item.GetType().GetProperty("Id").GetValue(item)}, ChangeType: {state.ToString()}, ChangeTime: {DateTime.Now}, ModifierId: {useContext.GetUserId()}, ClientIp: {useContext.GetUserIp()}, RecordData: {recordData}");
+                logger.Info($"ModificationLog - Entity: {entityType.Name}, RecordId: {(int)item.GetType().GetProperty("Id").GetValue(item)}, ChangeType: {state.ToString()}, ChangeTime: {DateTime.Now}, ModifierId: {useContext.GetUserId()}, ClientIp: {useContext.GetUserIp()}, RecordData: {recordData}");
 
                 try
                 {

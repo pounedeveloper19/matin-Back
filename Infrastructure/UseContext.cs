@@ -22,18 +22,18 @@ namespace TicketManagement.Infrastructure
                 return null;
             if (!string.IsNullOrEmpty(accessToken))
             {
-                string token = accessToken;
+                string token = accessToken.ToString().Trim();
+
+                if (token.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
+                    token = token.Substring(7).Trim();
 
                 if (token.StartsWith("\""))
-                {
                     token = token.Substring(1);
-                }
 
                 if (token.EndsWith("\""))
-                {
                     token = token.Substring(0, token.Length - 1);
-                }
-                return token;
+
+                return string.IsNullOrEmpty(token) ? null : token;
             }
             return null;
         }
@@ -98,6 +98,14 @@ namespace TicketManagement.Infrastructure
             var customerId = user?.CustomerProfileId;
             _cache.Set(cacheKey, customerId, TimeSpan.FromMinutes(5));
             return customerId;
+        }
+
+        public int? GetCustomerType()
+        {
+            var customerId = GetCustomerId();
+            if (!customerId.HasValue) return null;
+            var profile = Repository<CustomerProfile>.GetLast(i => i.Id == customerId.Value);
+            return profile?.CustomerTypeId;
         }
 
         public int? GetAddressId()
