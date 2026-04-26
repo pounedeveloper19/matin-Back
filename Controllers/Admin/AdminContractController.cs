@@ -15,13 +15,17 @@ namespace MatinPower.Server.Controllers.Admin
             var result = Repository<Contract>.GetSelectiveListWithPaging(i => new
             {
                 i.Id,
-                CustomerNationalId = i.Subscription.Address.CustomerProfile.CustomersLegal.NationalId,
+                CustomerNationalId = i.Subscription.Address.CustomerProfile.CustomersLegal.NationalId
+                    ?? i.Subscription.Address.CustomerProfile.CustomersReal.NationalCode,
+                CustomerName = i.Subscription.Address.CustomerProfile.CustomersLegal.CompanyName
+                    ?? (i.Subscription.Address.CustomerProfile.CustomersReal.FirstName + " " + i.Subscription.Address.CustomerProfile.CustomersReal.LastName),
                 Status = i.Status.Title,
                 i.ContractNumber,
-                StartDate = PersianDateConverter.ToPersianDate(i.StartDate),
-                EndDate = PersianDateConverter.ToPersianDate(i.EndDate),
+                StartDate = PersianDateConverter.ToPersianDate(i.StartDate, "yyyy/MM/dd"),
+                EndDate = PersianDateConverter.ToPersianDate(i.EndDate, "yyyy/MM/dd"),
                 WarrantyFileId = i.Warranties.OrderByDescending(w => w.Date).Select(w => w.FileId).FirstOrDefault(),
-            }, filter, predicate, sortExpression: "StartDate", sortDirection: System.Web.Helpers.SortDirection.Descending, includes: new[] { "Subscription.Address.CustomerProfile.CustomersLegal", "Status" });
+            }, filter, predicate, sortExpression: "StartDate", sortDirection: System.Web.Helpers.SortDirection.Descending,
+            includes: new[] { "Warranties", "Subscription.Address.CustomerProfile.CustomersLegal", "Subscription.Address.CustomerProfile.CustomersReal", "Status" });
 
             return new PaginationResult(result.Item1, filter.PageNumber, filter.PageSize, result.Item2, result.Item3, result.Item4);
         }

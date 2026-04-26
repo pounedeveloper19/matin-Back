@@ -10,6 +10,22 @@ namespace MatinPower.Server.Controllers;
 public class LookupController : BaseController
 {
     [HttpGet]
+    public ExecutionResult GetProvinces() =>
+        RunExceptionProof(() =>
+        {
+            using var db = DbContextProvider.CreateContext();
+            return db.Provinces.OrderBy(p => p.Name).Select(p => new { p.Id, p.Name }).ToList();
+        });
+
+    [HttpGet]
+    public ExecutionResult GetPowerEntityTypes() =>
+        RunExceptionProof(() =>
+        {
+            using var db = DbContextProvider.CreateContext();
+            return db.EnumPowerEntityTypes.Select(t => new { t.Id, t.Title }).ToList();
+        });
+
+    [HttpGet]
     public ExecutionResult GetCities() =>
         RunExceptionProof(() =>
         {

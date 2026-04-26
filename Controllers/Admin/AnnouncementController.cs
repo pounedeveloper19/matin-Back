@@ -15,8 +15,8 @@ namespace MatinPower.Server.Controllers.Admin
             {
                 i.Id,
                 i.Title,
-                i.PublishDate,
-                i.FinishDate,
+                PublishDate = PersianDateConverter.ToPersianDate(i.PublishDate, "yyyy/MM/dd"),
+                FinishDate = PersianDateConverter.ToPersianDate(i.FinishDate, "yyyy/MM/dd"),
             }, filter, predicate,
                sortExpression: "PublishDate",
                sortDirection: System.Web.Helpers.SortDirection.Descending);

@@ -315,6 +315,28 @@ namespace MatinPower.Server.Controllers.Customer
             });
         }
 
+        [HttpPut]
+        [Route("[controller]/UpdateCustomerAgent")]
+        public ExecutionResult UpdateCustomerAgent([FromBody] CustomerAgent agent)
+        {
+            var customerId = GetCustomerProfileId();
+            if (customerId == null)
+                return new ExecutionResult(ResultType.Danger, "خطا", "کاربر احراز هویت نشده.", 401);
+
+            var user = Repository<User>.GetLast(i => i.CustomerProfileId == customerId.Value);
+            if (user == null)
+                return new ExecutionResult(ResultType.Danger, "خطا", "نماینده یافت نشد.", 404);
+
+            return RunExceptionProof(() =>
+            {
+                user.FullName = agent.FullName;
+                user.Mobile = agent.Mobile;
+                if (!string.IsNullOrWhiteSpace(agent.Password))
+                    user.Password = agent.Password;
+                Repository<User>.UpdateItem(user);
+            });
+        }
+
         [HttpGet]
         [Route("[controller]/GetCustomerAgent")]
         public ExecutionResult GetCustomerAgent()
@@ -422,7 +444,7 @@ namespace MatinPower.Server.Controllers.Customer
                     i.Subject,
                     Status    = i.Status.Title,
                     i.StatusId,
-                    i.CreatedAt,
+                    CreatedAt = PersianDateConverter.ToPersianDate(i.CreatedAt, "yyyy/MM/dd"),
                     MessageCount = i.TicketMessages.Count,
                 }, i => i.CustomerProfileId == customerId.Value, includes: new[] { "Status", "TicketMessages" });
                 return (object)result;

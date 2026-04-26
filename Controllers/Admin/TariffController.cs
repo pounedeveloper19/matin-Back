@@ -22,7 +22,7 @@ namespace MatinPower.Server.Controllers.Admin
                 CustomerType = i.CustomerType.Title,
                 i.PowerEntitiesId,
                 PowerEntity = i.PowerEntities.Name,
-                i.EffectiveFrom,
+                EffectiveFrom = PersianDateConverter.ToPersianDate(i.EffectiveFrom, "yyyy/MM/dd"),
             }, filter, predicate, sortExpression: "TariffId", sortDirection: System.Web.Helpers.SortDirection.Descending, includes: new[] { "TariffType", "CustomerType", "PowerEntities" });
 
             return new PaginationResult(result.Item1, filter.PageNumber, filter.PageSize, result.Item2, result.Item3, result.Item4);

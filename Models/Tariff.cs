@@ -13,7 +13,7 @@ public partial class Tariff
 
     public int PowerEntitiesId { get; set; }
 
-    public DateOnly EffectiveFrom { get; set; }
+    public DateTime EffectiveFrom { get; set; }
 
     public virtual EnumCustomerType CustomerType { get; set; } = null!;
 

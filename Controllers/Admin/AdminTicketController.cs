@@ -25,7 +25,7 @@ namespace MatinPower.Server.Controllers.Admin
                         : i.CustomerProfile.CustomersLegal != null
                         ? i.CustomerProfile.CustomersLegal.CompanyName
                         : "نامشخص",
-                    i.CreatedAt,
+                    CreatedAt = PersianDateConverter.ToPersianDate(i.CreatedAt, "yyyy/MM/dd"),
                     MessageCount = i.TicketMessages.Count,
                 }, i => true, includes: new[] { "Status", "CustomerProfile.CustomersReal", "CustomerProfile.CustomersLegal", "TicketMessages" });
 
@@ -45,7 +45,7 @@ namespace MatinPower.Server.Controllers.Admin
                     FileId = i.FileId.HasValue ? i.FileId.ToString() : (string?)null,
                     SenderName = i.SenderUser.FullName ?? "کاربر",
                     IsAdmin = i.SenderUser.CustomerProfileId == null,
-                    i.CreatedAt,
+                    CreatedAt = PersianDateConverter.ToPersianDate(i.CreatedAt, "yyyy/MM/dd"),
                 }, i => i.TicketId == ticketId, includes: new[] { "SenderUser" });
 
                 return (object)messages;
