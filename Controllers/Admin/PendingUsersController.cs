@@ -13,8 +13,10 @@ namespace MatinPower.Server.Controllers.Admin
         {
             return RunExceptionProof(() =>
             {
-                var users = Repository<User>
-                    .GetListExtended(u => u.IsActive == false && u.CustomerProfileId != null)
+                using var db = DbContextProvider.CreateContext();
+
+                var users = db.Users
+                    .Where(u => u.IsActive == false && u.CustomerProfileId != null)
                     .Select(u => new
                     {
                         u.Id,
@@ -34,6 +36,33 @@ namespace MatinPower.Server.Controllers.Admin
                         NationalId = u.CustomerProfile != null && u.CustomerProfile.CustomersLegal != null
                             ? u.CustomerProfile.CustomersLegal.NationalId
                             : null,
+                        RegisteredAt = u.CustomerProfile != null
+                            ? (u.CustomerProfile.CustomersReal != null
+                                ? u.CustomerProfile.CustomersReal.CreatedAt
+                                : u.CustomerProfile.CustomersLegal != null
+                                    ? u.CustomerProfile.CustomersLegal.CreatedAt
+                                    : (DateTime?)null)
+                            : (DateTime?)null,
+                        City = u.CustomerProfile != null
+                            ? u.CustomerProfile.Addresses
+                                .OrderByDescending(a => a.Id)
+                                .Select(a => a.City.Title)
+                                .FirstOrDefault()
+                            : null,
+                        Province = u.CustomerProfile != null
+                            ? u.CustomerProfile.Addresses
+                                .OrderByDescending(a => a.Id)
+                                .Select(a => a.City.Province.Name)
+                                .FirstOrDefault()
+                            : null,
+                        MainAddress = u.CustomerProfile != null
+                            ? u.CustomerProfile.Addresses
+                                .OrderByDescending(a => a.Id)
+                                .Select(a => a.MainAddress)
+                                .FirstOrDefault()
+                            : null,
+                        HasIdentityDoc = u.CustomerProfile != null && u.CustomerProfile.IdentityDocFileId.HasValue,
+                        HasAddress = u.CustomerProfile != null && u.CustomerProfile.Addresses.Any(),
                     })
                     .OrderByDescending(u => u.Id)
                     .ToList();
