@@ -89,11 +89,14 @@ namespace MatinPower.Server.Controllers.Admin
             }
 
             var existing = Repository<Models.CustomersLegal>.GetItemById(item.Id);
-            existing.CompanyName = item.CompanyName;
-            existing.NationalId = item.NationalId;
-            existing.EconomicCode = item.EconomicCode;
-            existing.CeoFullName = item.CeoFullName;
-            existing.CeoMobile = item.CeoMobile;
+            existing.CompanyName    = item.CompanyName;
+            existing.NationalId    = item.NationalId;
+            existing.EconomicCode  = item.EconomicCode;
+            existing.CeoFullName   = item.CeoFullName;
+            existing.CeoMobile     = item.CeoMobile;
+            existing.RegisterNumber = item.RegisterNumber;
+            existing.CeoNationalId  = item.CeoNationalId;
+            existing.GazetteDate    = item.GazetteDate;
             return existing;
         }
 

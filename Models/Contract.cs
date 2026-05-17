@@ -21,6 +21,14 @@ public partial class Contract
 
     public Guid? FileId { get; set; }
 
+    public decimal? ContractPowerKw { get; set; }
+
+    public decimal? ContractVolumeKwh { get; set; }
+
+    public decimal? ContractAmountRial { get; set; }
+
+    public DateTime? PaymentDeadline { get; set; }
+
     public virtual EnumContractStatus Status { get; set; } = null!;
 
     public virtual Subscription Subscription { get; set; } = null!;

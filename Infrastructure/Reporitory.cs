@@ -379,34 +379,59 @@ namespace TicketManagement.Infrastructure
         internal static void LogModification<T>(T item, EntityState state, MatinPowerDbContext context, bool isTransaction = false)
         {
             Type entityType = item.GetType();
-
             if (entityType.IsDefined(typeof(EntityXmlIgnoreAttribute), true))
                 return;
 
             UseContext useContext = new UseContext(new HttpContextAccessor());
 
-            var recordData = DataDictionary.Create(item, entityType).SerializeToString();
+            var idProperty = entityType.GetProperty("Id");
+            int recordId = idProperty != null ? (int)idProperty.GetValue(item) : 0;
 
-            var logger = NLog.LogManager.GetLogger("ModificationLogDataBase");
-            var logEventInfo = new LogEventInfo(NLog.LogLevel.Info, logger.Name, $"ModificationLog - Entity: {entityType.Name}, RecordId: {(int)item.GetType().GetProperty("Id").GetValue(item)}, ChangeType: {state.ToString()}, ChangeTime: {DateTime.Now}, ModifierId: {useContext.GetUserId()}, ClientIp: {useContext.GetUserIp()}");
-            logEventInfo.Properties["RecordData"] = recordData;
-            logger.Log(logEventInfo);
-
-            if (!isTransaction)
+            int auditTypeId = state switch
             {
-                logger.Info($"ModificationLog - Entity: {entityType.Name}, RecordId: {(int)item.GetType().GetProperty("Id").GetValue(item)}, ChangeType: {state.ToString()}, ChangeTime: {DateTime.Now}, ModifierId: {useContext.GetUserId()}, ClientIp: {useContext.GetUserIp()}, RecordData: {recordData}");
+                EntityState.Added => 1,  // Insert
+                EntityState.Modified => 2,  // Update
+                EntityState.Deleted => 3,  // Delete
+                _ => 0
+            };
 
-                try
-                {
-                    //context.SaveChanges();
-                }
-                catch (Exception ex)
-                {
-                    logger.Error($"Error saving changes to the context: {ex.Message}");
-                }
-            }
+            int? userId = useContext.GetUserId();
+            string clientIp = useContext.GetUserIp();
+
+            var auditLogger = NLog.LogManager.GetLogger("Audit.Modification");
+
+            var oldValue = state == EntityState.Modified
+                ? DataDictionary.Create(item, entityType).SerializeToString()   // قبل از تغییر
+                : null;
+
+            var newValue = state != EntityState.Deleted
+                ? DataDictionary.Create(item, entityType).SerializeToString()
+                : null;
+
+            var auditEvent = new LogEventInfo(NLog.LogLevel.Info, auditLogger.Name,
+                $"AuditTrail - Entity: {entityType.Name}, RecordId: {recordId}, Action: {state}");
+
+            auditEvent.Properties["TableName"] = entityType.Name;
+            auditEvent.Properties["RecordId"] = recordId;
+            auditEvent.Properties["AuditTypeId"] = auditTypeId;
+            auditEvent.Properties["OldValue"] = oldValue;
+            auditEvent.Properties["NewValue"] = newValue;
+            auditEvent.Properties["UserId"] = userId;
+
+            auditLogger.Log(auditEvent);
+
+            var appLogger = NLog.LogManager.GetLogger("Audit.Modification");
+
+            var appEvent = new LogEventInfo(NLog.LogLevel.Info, appLogger.Name,
+                $"Entity {entityType.Name} (Id={recordId}) was {state} by User {userId}");
+
+            appEvent.Properties["UserId"] = userId;
+            appEvent.Properties["Action"] = state.ToString();
+            appEvent.Properties["Entity"] = entityType.Name;
+            appEvent.Properties["EntityId"] = recordId.ToString();
+
+            appLogger.Log(appEvent);
         }
-
         public static void ExecuteCommand(Action<MatinPowerDbContext> command)
         {
             using (var entities = DbContextProvider.CreateContext())
@@ -425,10 +450,16 @@ namespace TicketManagement.Infrastructure
         }
         private static void LogException(Exception ex)
         {
-            var logger = LogManager.GetLogger("ExceptionLogDatabase");
+            var appLogger = NLog.LogManager.GetLogger(typeof(T).FullName);
 
-            logger.Error(ex, $"An exception occurred in the Repository<{typeof(T).Name}>.");
+            var logEvent = new LogEventInfo(NLog.LogLevel.Error, appLogger.Name, $"Exception in Repository<{typeof(T).Name}>: {ex.Message}");
+            logEvent.Exception = ex;
+            logEvent.Properties["Entity"] = typeof(T).Name;
+            logEvent.Properties["Action"] = "RepositoryError";
+
+            appLogger.Log(logEvent);
         }
+
     }
 
     public class EntityXmlIgnoreAttribute : Attribute

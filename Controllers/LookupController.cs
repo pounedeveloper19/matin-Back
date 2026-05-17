@@ -2,6 +2,7 @@ using MatinPower.Infrastructure;
 using MatinPower.Server.Models;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using TicketManagement.Infrastructure;
 
 namespace MatinPower.Server.Controllers;
 
@@ -130,6 +131,191 @@ public class LookupController : BaseController
                 .Where(a => a.PublishDate <= now && (a.FinishDate == null || a.FinishDate >= now))
                 .OrderByDescending(a => a.PublishDate)
                 .Select(a => new { a.Id, a.Title, a.Contents, a.PublishDate })
+                .ToList();
+        });
+
+    [HttpGet]
+    public ExecutionResult GetTariffCodes() =>
+        RunExceptionProof(() =>
+        {
+            using var db = DbContextProvider.CreateContext();
+            return db.TariffCodes
+                .OrderBy(t => t.Code)
+                .Select(t => new { t.Id, t.Code, t.Title })
+                .ToList();
+        });
+
+    [HttpGet]
+    public ExecutionResult GetTariffCodeOptions(int tariffCodeId) =>
+        RunExceptionProof(() =>
+        {
+            using var db = DbContextProvider.CreateContext();
+            return db.TariffCodeOptions
+                .Where(o => o.TariffCodeId == tariffCodeId)
+                .OrderBy(o => o.Title)
+                .Select(o => new
+                {
+                    o.Id,
+                    o.Title,
+                    o.PenaltyMultiplier,
+                    o.CreditMultiplier,
+                })
+                .ToList();
+        });
+
+    [HttpGet]
+    public ExecutionResult GetMyMenu() =>
+        RunExceptionProof(() =>
+        {
+            var userId = new UseContext(new HttpContextAccessor()).GetUserId();
+            if (userId == null) return (object)new List<object>();
+
+            using var db = DbContextProvider.CreateContext();
+
+            var user = db.Users.FirstOrDefault(u => u.Id == userId);
+            if (user == null) return (object)new List<object>();
+
+            bool isAdmin   = !user.CustomerProfileId.HasValue;
+            int rootParent = isAdmin ? 10 : 1;
+
+            // همه آیتم‌های منویی سیستم (صرفاً IsInMenu=true)
+            var all = db.SiteMaps
+                .Where(s => s.IsInMenu)
+                .Select(s => new
+                {
+                    s.Id, s.Title, s.PhysicalPath, s.Icon,
+                    s.ParentId, s.Indexer, s.IsSelectable,
+                })
+                .ToList();
+
+            // تعیین مجموعه آیتم‌های مجاز بر اساس نقش
+            HashSet<int>? allowed = null;
+            if (isAdmin)
+            {
+                var ur = db.UserRoles.FirstOrDefault(x => x.UserId == userId);
+                if (ur != null)
+                {
+                    var ids = db.SiteMapRoles
+                        .Where(sr => sr.RoleId == ur.RoleId)
+                        .Select(sr => sr.SiteMapId)
+                        .ToList();
+                    allowed = new HashSet<int>(ids);
+                }
+            }
+
+            // ساخت درخت به‌صورت بازگشتی
+            List<object> BuildTree(int parentId)
+            {
+                var result = new List<object>();
+                var children = all.Where(s => s.ParentId == parentId)
+                                  .OrderBy(s => s.Indexer)
+                                  .ToList();
+
+                foreach (var item in children)
+                {
+                    var sub = BuildTree(item.Id);
+
+                    if (item.IsSelectable)
+                    {
+                        // صفحه‌ی واقعی: اگه مجوز داره یا محدودیتی نیست
+                        if (allowed == null || allowed.Contains(item.Id))
+                            result.Add(new { item.Id, item.Title, Path = item.PhysicalPath, item.Icon, item.IsSelectable, Children = sub });
+                    }
+                    else
+                    {
+                        // گروه: نشون بده فقط اگه حداقل یه فرزند مجاز داره
+                        if (sub.Any())
+                            result.Add(new { item.Id, item.Title, Path = item.PhysicalPath, item.Icon, item.IsSelectable, Children = sub });
+                    }
+                }
+                return result;
+            }
+
+            return BuildTree(rootParent);
+        });
+
+    [HttpGet]
+    public ExecutionResult GetMyPermissions() =>
+        RunExceptionProof(() =>
+        {
+            var userId = new UseContext(new HttpContextAccessor()).GetUserId();
+            if (userId == null) return (object)new List<string>();
+
+            using var db = DbContextProvider.CreateContext();
+            var user = db.Users.FirstOrDefault(u => u.Id == userId);
+            if (user == null) return (object)new List<string>();
+
+            bool isAdmin = !user.CustomerProfileId.HasValue;
+            if (!isAdmin) return (object)new List<string>(); // مشتری نیازی به ControlKey ندارد
+
+            var ur = db.UserRoles.FirstOrDefault(x => x.UserId == userId);
+            if (ur == null)
+            {
+                // سوپر ادمین (بدون نقش): همه ControlKey ها
+                return db.SiteMaps
+                    .Where(s => s.ControlKey != null)
+                    .Select(s => s.ControlKey!)
+                    .ToList();
+            }
+
+            // ادمین با نقش: فقط ControlKey های تعریف‌شده در SiteMapRole
+            return db.SiteMapRoles
+                .Where(sr => sr.RoleId == ur.RoleId && sr.SiteMap.ControlKey != null)
+                .Select(sr => sr.SiteMap.ControlKey!)
+                .ToList();
+        });
+
+    [HttpGet]
+    public ExecutionResult GetEnergyTypes() =>
+        RunExceptionProof(() =>
+        {
+            using var db = DbContextProvider.CreateContext();
+            return db.EnumEnergyTypes.Select(t => new { t.Id, t.Title }).ToList();
+        });
+
+    [HttpGet]
+    public ExecutionResult GetPaymentMethods() =>
+        RunExceptionProof(() =>
+        {
+            using var db = DbContextProvider.CreateContext();
+            return db.EnumPaymentMethods.Select(t => new { t.Id, t.Title }).ToList();
+        });
+
+    [HttpGet]
+    public ExecutionResult GetOrderStatuses() =>
+        RunExceptionProof(() =>
+        {
+            using var db = DbContextProvider.CreateContext();
+            return db.EnumOrderStatuses.Select(t => new { t.Id, t.Title }).ToList();
+        });
+
+    [HttpGet]
+    public ExecutionResult GetPaymentStatuses() =>
+        RunExceptionProof(() =>
+        {
+            using var db = DbContextProvider.CreateContext();
+            return db.EnumPaymentStatuses.Select(t => new { t.Id, t.Title }).ToList();
+        });
+
+    [HttpGet]
+    public ExecutionResult GetRoles() =>
+        RunExceptionProof(() =>
+        {
+            using var db = DbContextProvider.CreateContext();
+            return db.Roles
+                .OrderBy(r => r.Id)
+                .Select(r => new { r.Id, r.Title, r.Description })
+                .ToList();
+        });
+
+    [HttpGet]
+    public ExecutionResult GetSiteMaps() =>
+        RunExceptionProof(() =>
+        {
+            using var db = DbContextProvider.CreateContext();
+            return db.SiteMaps
+                .OrderBy(s => s.ParentId).ThenBy(s => s.Indexer)
+                .Select(s => new { s.Id, s.Title, s.ParentId, s.IsInMenu, s.IsSelectable, s.Description, s.ControlKey })
                 .ToList();
         });
 

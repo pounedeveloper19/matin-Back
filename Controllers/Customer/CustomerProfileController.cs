@@ -3,6 +3,7 @@ using MatinPower.Server.Models;
 using MatinPower.Server.Models.Body;
 using Microsoft.AspNetCore.Mvc;
 using TicketManagement.Infrastructure;
+using Microsoft.EntityFrameworkCore;
 
 namespace MatinPower.Server.Controllers.Customer
 {
@@ -146,6 +147,16 @@ namespace MatinPower.Server.Controllers.Customer
             if (customerType == null)
                 return new ExecutionResult(ResultType.Danger, "خطا", "پروفایل مشتری یافت نشد.", 404);
 
+            var profile = Repository<CustomerProfile>.GetListExtended(i => i.Id == customerId.Value,
+                includes: new[] { "TariffCodeOption", "TariffCodeOption.TariffCode" }).LastOrDefault();
+            var tariffInfo = profile?.TariffCodeOption == null ? null : new
+            {
+                tariffCodeOptionId    = profile.TariffCodeOption.Id,
+                tariffCodeId          = profile.TariffCodeOption.TariffCodeId,
+                tariffCodeTitle       = profile.TariffCodeOption.TariffCode?.Title,
+                tariffCodeOptionTitle = profile.TariffCodeOption.Title,
+            };
+
             if (customerType == 1)
             {
                 var real = Repository<CustomersReal>.GetLast(i => i.Id == customerId.Value);
@@ -158,6 +169,7 @@ namespace MatinPower.Server.Controllers.Customer
                     lastName = real.LastName,
                     nationalCode = real.NationalCode,
                     mobile = real.Mobile,
+                    tariff = tariffInfo,
                 });
             }
 
@@ -169,15 +181,39 @@ namespace MatinPower.Server.Controllers.Customer
                 return new ExecutionResult(ResultType.Success, null, null, 200, new
                 {
                     type = "legal",
-                    companyName = legal.CompanyName,
-                    nationalId = legal.NationalId,
-                    economicCode = legal.EconomicCode,
-                    ceo_FullName = legal.CeoFullName,
-                    ceo_Mobile = legal.CeoMobile,
+                    companyName    = legal.CompanyName,
+                    nationalId     = legal.NationalId,
+                    economicCode   = legal.EconomicCode,
+                    ceo_FullName   = legal.CeoFullName,
+                    ceo_Mobile     = legal.CeoMobile,
+                    registerNumber = legal.RegisterNumber,
+                    ceoNationalId  = legal.CeoNationalId,
+                    gazetteDate    = legal.GazetteDate.HasValue
+                                     ? PersianDateConverter.ToPersianDate(legal.GazetteDate, "yyyy/MM/dd")
+                                     : null,
+                    tariff = tariffInfo,
                 });
             }
 
             return new ExecutionResult(ResultType.Danger, "خطا", "نوع مشتری نامعتبر است.", 400);
+        }
+
+        [HttpPut]
+        [Route("[controller]/UpdateTariffCode")]
+        public ExecutionResult UpdateTariffCode([FromBody] UpdateTariffCodeRequest request)
+        {
+            var customerId = GetCustomerProfileId();
+            if (customerId == null)
+                return new ExecutionResult(ResultType.Danger, "خطا", "کاربر احراز هویت نشده.", 401);
+
+            return RunExceptionProof(() =>
+            {
+                var profile = Repository<CustomerProfile>.GetLast(i => i.Id == customerId.Value);
+                if (profile == null)
+                    return;
+                profile.TariffCodeOptionId = request.TariffCodeOptionId;
+                Repository<CustomerProfile>.UpdateItem(profile);
+            });
         }
 
         [HttpGet]

@@ -16,6 +16,12 @@ public partial class CustomersLegal
 
     public string CeoMobile { get; set; } = null!;
 
+    public string? RegisterNumber { get; set; }
+
+    public string? CeoNationalId { get; set; }
+
+    public DateTime? GazetteDate { get; set; }
+
     public DateTime? CreatedAt { get; set; }
 
     public virtual CustomerProfile CustomerProfile { get; set; } = null!;

@@ -21,5 +21,9 @@
         public string WarrantyType { get; set; }
         public int WarrantyTypeId { get; set; }
         public string? WarrantyFileId { get; set; }
+        public decimal? ContractPowerKw { get; set; }
+        public decimal? ContractVolumeKwh { get; set; }
+        public decimal? ContractAmountRial { get; set; }
+        public string? PaymentDeadline { get; set; }
     }
 }

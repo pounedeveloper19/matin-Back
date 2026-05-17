@@ -85,6 +85,14 @@ public partial class MatinPowerDbContext : DbContext
 
     public virtual DbSet<TariffSlab> TariffSlabs { get; set; }
 
+    public virtual DbSet<TariffCode> TariffCodes { get; set; }
+
+    public virtual DbSet<TariffCodeOption> TariffCodeOptions { get; set; }
+
+    public virtual DbSet<TariffCodeOptionRate> TariffCodeOptionRates { get; set; }
+
+    public virtual DbSet<SubscriptionRate> SubscriptionRates { get; set; }
+
     public virtual DbSet<Ticket> Tickets { get; set; }
 
     public virtual DbSet<TicketMessage> TicketMessages { get; set; }
@@ -158,19 +166,35 @@ public partial class MatinPowerDbContext : DbContext
         modelBuilder.Entity<BillAnalysisReport>(entity =>
         {
             entity.HasKey(e => e.Id).HasName("PK__BillAnal__3214EC07A20D5C04");
-
-            entity.Property(e => e.CostWithMatin).HasColumnType("decimal(18, 2)");
-            entity.Property(e => e.CostWithoutMatin).HasColumnType("decimal(18, 2)");
             entity.Property(e => e.CreatedAt).HasDefaultValueSql("(getdate())");
-            entity.Property(e => e.LowCons).HasColumnType("decimal(18, 2)");
-            entity.Property(e => e.MidCons).HasColumnType("decimal(18, 2)");
-            entity.Property(e => e.NetSaving).HasColumnType("decimal(18, 2)");
+
             entity.Property(e => e.PeakCons).HasColumnType("decimal(18, 2)");
+            entity.Property(e => e.MidCons).HasColumnType("decimal(18, 2)");
+            entity.Property(e => e.LowCons).HasColumnType("decimal(18, 2)");
+            entity.Property(e => e.ContractDemandKw).HasColumnType("decimal(18, 2)");
+            entity.Property(e => e.ActualDemandKw).HasColumnType("decimal(18, 2)");
+            entity.Property(e => e.BilateralKwh).HasColumnType("decimal(18, 2)");
+            entity.Property(e => e.BilateralRate).HasColumnType("decimal(18, 4)");
+            entity.Property(e => e.ExchangeKwh).HasColumnType("decimal(18, 2)");
+            entity.Property(e => e.ExchangeRate).HasColumnType("decimal(18, 4)");
+            entity.Property(e => e.GreenLawKwh).HasColumnType("decimal(18, 2)");
+            entity.Property(e => e.GreenRate).HasColumnType("decimal(18, 4)");
+            entity.Property(e => e.CostWithoutMatin).HasColumnType("decimal(18, 2)");
+            entity.Property(e => e.CostWithMatin).HasColumnType("decimal(18, 2)");
+            entity.Property(e => e.NetSaving).HasColumnType("decimal(18, 2)");
+            entity.Property(e => e.BilateralBillRial).HasColumnType("decimal(18, 2)");
+            entity.Property(e => e.ExchangeBillRial).HasColumnType("decimal(18, 2)");
+            entity.Property(e => e.GreenBillRial).HasColumnType("decimal(18, 2)");
 
             entity.HasOne(d => d.Subscription).WithMany(p => p.BillAnalysisReports)
                 .HasForeignKey(d => d.SubscriptionId)
                 .OnDelete(DeleteBehavior.ClientSetNull)
                 .HasConstraintName("FK__BillAnaly__Subsc__0A9D95DB");
+
+            entity.HasOne(d => d.TariffCodeOption).WithMany()
+                .HasForeignKey(d => d.TariffCodeOptionId)
+                .OnDelete(DeleteBehavior.SetNull)
+                .HasConstraintName("FK_BillAnalysisReport_TariffCodeOption");
         });
 
         modelBuilder.Entity<BillUsingByTou>(entity =>
@@ -214,6 +238,10 @@ public partial class MatinPowerDbContext : DbContext
             entity.Property(e => e.ContractRate).HasColumnType("decimal(18, 4)");
             entity.Property(e => e.EndDate).HasColumnType("datetime");
             entity.Property(e => e.StartDate).HasColumnType("datetime");
+            entity.Property(e => e.ContractPowerKw).HasColumnType("decimal(18, 2)");
+            entity.Property(e => e.ContractVolumeKwh).HasColumnType("decimal(18, 3)");
+            entity.Property(e => e.ContractAmountRial).HasColumnType("decimal(18, 0)");
+            entity.Property(e => e.PaymentDeadline).HasColumnType("date");
 
             entity.HasOne(d => d.Status).WithMany(p => p.Contracts)
                 .HasForeignKey(d => d.StatusId)
@@ -414,21 +442,19 @@ public partial class MatinPowerDbContext : DbContext
         modelBuilder.Entity<MonthlyMarketRate>(entity =>
         {
             entity.HasKey(e => e.Id).HasName("PK__MonthlyM__3214EC07E68F40E5");
-
             entity.HasIndex(e => new { e.Year, e.Month }, "UC_MonthlyRates_YM").IsUnique();
 
-            entity.Property(e => e.Article16Rate).HasColumnType("decimal(18, 4)");
-            entity.Property(e => e.BackupRate).HasColumnType("decimal(18, 4)");
-            entity.Property(e => e.BoardLow).HasColumnType("decimal(18, 4)");
-            entity.Property(e => e.BoardMid).HasColumnType("decimal(18, 4)");
-            entity.Property(e => e.BoardPeak).HasColumnType("decimal(18, 4)");
-            entity.Property(e => e.ExecutiveTariffBase).HasColumnType("decimal(18, 4)");
-            entity.Property(e => e.FuelFee).HasColumnType("decimal(18, 4)");
-            entity.Property(e => e.GreenBoardRate).HasColumnType("decimal(18, 4)");
-            entity.Property(e => e.IndustrialTariffBase).HasColumnType("decimal(18, 4)");
-            entity.Property(e => e.MarketLow).HasColumnType("decimal(18, 4)");
-            entity.Property(e => e.MarketMid).HasColumnType("decimal(18, 4)");
+            entity.Property(e => e.MarketAvg).HasColumnType("decimal(18, 4)");
             entity.Property(e => e.MarketPeak).HasColumnType("decimal(18, 4)");
+            entity.Property(e => e.MarketMid).HasColumnType("decimal(18, 4)");
+            entity.Property(e => e.MarketLow).HasColumnType("decimal(18, 4)");
+            entity.Property(e => e.BoardPeak).HasColumnType("decimal(18, 4)");
+            entity.Property(e => e.BoardMid).HasColumnType("decimal(18, 4)");
+            entity.Property(e => e.BoardLow).HasColumnType("decimal(18, 4)");
+            entity.Property(e => e.GreenBoardRate).HasColumnType("decimal(18, 4)");
+            entity.Property(e => e.OpenBoardRate).HasColumnType("decimal(18, 4)");
+            entity.Property(e => e.IndustrialTariffBase).HasColumnType("decimal(18, 4)");
+            entity.Property(e => e.ExecutiveTariffBase).HasColumnType("decimal(18, 4)");
         });
 
         modelBuilder.Entity<OptimumPurchaseSuggestion>(entity =>
@@ -678,6 +704,64 @@ public partial class MatinPowerDbContext : DbContext
                 .HasForeignKey(d => d.TypeId)
                 .OnDelete(DeleteBehavior.ClientSetNull)
                 .HasConstraintName("FK__Guarantee__TypeI__07C12930");
+        });
+
+        modelBuilder.Entity<TariffCode>(entity =>
+        {
+            entity.ToTable("TariffCode");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Code).HasMaxLength(20).IsRequired();
+            entity.Property(e => e.Title).HasMaxLength(100).IsRequired();
+            entity.HasIndex(e => e.Code).IsUnique();
+        });
+
+        modelBuilder.Entity<TariffCodeOption>(entity =>
+        {
+            entity.ToTable("TariffCodeOption");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Title).HasMaxLength(100).IsRequired();
+            entity.Property(e => e.PenaltyMultiplier).HasColumnType("decimal(18,4)").HasDefaultValue(1.3m);
+            entity.Property(e => e.CreditMultiplier).HasColumnType("decimal(18,4)").HasDefaultValue(0.75m);
+            entity.HasOne(d => d.TariffCode).WithMany(p => p.Options)
+                .HasForeignKey(d => d.TariffCodeId)
+                .OnDelete(DeleteBehavior.Cascade)
+                .HasConstraintName("FK_TariffCodeOption_TariffCode");
+        });
+
+        modelBuilder.Entity<SubscriptionRate>(entity =>
+        {
+            entity.ToTable("SubscriptionRate");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.RateType).HasMaxLength(10).HasDefaultValue("single");
+            entity.Property(e => e.SingleRateRial).HasColumnType("decimal(18,4)");
+            entity.Property(e => e.PeakRateRial).HasColumnType("decimal(18,4)");
+            entity.Property(e => e.MidRateRial).HasColumnType("decimal(18,4)");
+            entity.Property(e => e.LowRateRial).HasColumnType("decimal(18,4)");
+            entity.Property(e => e.CreatedAt).HasDefaultValueSql("(getdate())");
+            entity.HasOne(d => d.Subscription).WithMany()
+                .HasForeignKey(d => d.SubscriptionId)
+                .OnDelete(DeleteBehavior.Cascade)
+                .HasConstraintName("FK_SubscriptionRate_Subscription");
+        });
+
+        modelBuilder.Entity<TariffCodeOptionRate>(entity =>
+        {
+            entity.ToTable("TariffCodeOptionRate");
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => new { e.TariffCodeOptionId, e.Year }, "UC_TariffCodeOptionRate").IsUnique();
+            entity.Property(e => e.RateRialPerKwh).HasColumnType("decimal(18, 4)");
+            entity.HasOne(d => d.TariffCodeOption).WithMany(p => p.Rates)
+                .HasForeignKey(d => d.TariffCodeOptionId)
+                .OnDelete(DeleteBehavior.Cascade)
+                .HasConstraintName("FK_TariffCodeOptionRate_Option");
+        });
+
+        modelBuilder.Entity<CustomerProfile>(entity =>
+        {
+            entity.HasOne(d => d.TariffCodeOption).WithMany(p => p.CustomerProfiles)
+                .HasForeignKey(d => d.TariffCodeOptionId)
+                .OnDelete(DeleteBehavior.SetNull)
+                .HasConstraintName("FK_CustomerProfile_TariffCodeOption");
         });
 
         OnModelCreatingPartial(modelBuilder);

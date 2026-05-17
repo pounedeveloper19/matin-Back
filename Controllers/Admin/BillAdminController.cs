@@ -9,6 +9,34 @@ namespace MatinPower.Server.Controllers.Admin
 {
     public class BillAdminController : BaseManageController<BillAnalysisReport>
     {
+        [HttpGet]
+        [Route("[controller]/GetByProfile/{profileId}")]
+        public ExecutionResult GetByProfile(int profileId) =>
+            RunExceptionProof(() =>
+            {
+                using var db = DbContextProvider.CreateContext();
+                var reports = db.BillAnalysisReports
+                    .Where(r => r.Subscription.Address.CustomerProfileId == profileId)
+                    .OrderByDescending(r => r.Year).ThenByDescending(r => r.Month)
+                    .Select(r => new
+                    {
+                        r.Id,
+                        r.SubscriptionId,
+                        BillIdentifier    = r.Subscription.BillIdentifier,
+                        r.Year,
+                        r.Month,
+                        r.PeakCons,
+                        r.MidCons,
+                        r.LowCons,
+                        r.CostWithoutMatin,
+                        r.CostWithMatin,
+                        r.NetSaving,
+                        r.CreatedAt,
+                    })
+                    .ToList();
+                return (object)reports;
+            });
+
         protected override PaginationResult GridDataSource(Expression<Func<BillAnalysisReport, bool>> predicate, PaginationFilter filter)
         {
             var result = Repository<BillAnalysisReport>.GetSelectiveListWithPaging(i => new
@@ -25,7 +53,7 @@ namespace MatinPower.Server.Controllers.Admin
                 i.CostWithMatin,
                 i.NetSaving,
                 i.CreatedAt,
-            }, filter, predicate, sortExpression: "CreatedAt", sortDirection: System.Web.Helpers.SortDirection.Descending);
+            }, filter, predicate, sortExpression: "CreatedAt", sortDirection: System.Web.Helpers.SortDirection.Descending, includes: new[] { "Subscription" });
 
             return new PaginationResult(result.Item1, filter.PageNumber, filter.PageSize, result.Item2, result.Item3, result.Item4);
         }

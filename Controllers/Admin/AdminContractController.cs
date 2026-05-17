@@ -24,6 +24,10 @@ namespace MatinPower.Server.Controllers.Admin
                 StartDate = PersianDateConverter.ToPersianDate(i.StartDate, "yyyy/MM/dd"),
                 EndDate = PersianDateConverter.ToPersianDate(i.EndDate, "yyyy/MM/dd"),
                 WarrantyFileId = i.Warranties.OrderByDescending(w => w.Date).Select(w => w.FileId).FirstOrDefault(),
+                i.ContractPowerKw,
+                i.ContractVolumeKwh,
+                i.ContractAmountRial,
+                PaymentDeadline = i.PaymentDeadline.HasValue ? i.PaymentDeadline.Value.ToString("yyyy-MM-dd") : null,
             }, filter, predicate, sortExpression: "StartDate", sortDirection: System.Web.Helpers.SortDirection.Descending,
             includes: new[] { "Warranties", "Subscription.Address.CustomerProfile.CustomersLegal", "Subscription.Address.CustomerProfile.CustomersReal", "Status" });
 
@@ -31,7 +35,22 @@ namespace MatinPower.Server.Controllers.Admin
         }
         protected override Contract GetItem(int id)
         {
-            var contract = id == 0 ? new Contract() : Repository<Contract>.GetItemById(id);
+            var contract = id == 0 ? new Contract() : Repository<Contract>.GetSelectiveList(i => new Contract
+            {
+                Id                 = i.Id,
+                SubscriptionId     = i.SubscriptionId,
+                ContractNumber     = i.ContractNumber,
+                ContractRate       = i.ContractRate,
+                StartDate          = i.StartDate,
+                EndDate            = i.EndDate,
+                StatusId           = i.StatusId,
+                FileId             = i.FileId,
+                ContractPowerKw    = i.ContractPowerKw,
+                ContractVolumeKwh  = i.ContractVolumeKwh,
+                ContractAmountRial = i.ContractAmountRial,
+                PaymentDeadline    = i.PaymentDeadline,
+            }, f => f.Id == id).Last();
+
             if (id != 0)
             {
                 var warranty = Repository<Warranty>.GetLast(i => i.ContractId == id);
@@ -53,11 +72,15 @@ namespace MatinPower.Server.Controllers.Admin
             {
                 var contract = Repository<Contract>.InsertItem(new Contract
                 {
-                    ContractRate = item.ContractRate,
-                    StartDate = item.StartDate,
-                    EndDate = item.EndDate,
-                    StatusId = 1,
-                    SubscriptionId = item.SubscriptionId
+                    ContractRate       = item.ContractRate,
+                    StartDate          = item.StartDate,
+                    EndDate            = item.EndDate,
+                    StatusId           = 1,
+                    SubscriptionId     = item.SubscriptionId,
+                    ContractPowerKw    = item.ContractPowerKw,
+                    ContractVolumeKwh  = item.ContractVolumeKwh,
+                    ContractAmountRial = item.ContractAmountRial,
+                    PaymentDeadline    = item.PaymentDeadline,
                 });
 
                 var pc = new System.Globalization.PersianCalendar();
@@ -75,6 +98,40 @@ namespace MatinPower.Server.Controllers.Admin
                 });
             });
         }
+        [Route("[controller]/GetContractPrintData")]
+        [HttpGet]
+        public ExecutionResult GetContractPrintData(int contractId) =>
+            RunExceptionProof(() =>
+            {
+                using var db = DbContextProvider.CreateContext();
+                var c = db.Contracts
+                    .Where(x => x.Id == contractId)
+                    .Select(x => new
+                    {
+                        x.ContractNumber,
+                        x.ContractRate,
+                        x.ContractPowerKw,
+                        x.ContractVolumeKwh,
+                        x.ContractAmountRial,
+                        StartDate  = PersianDateConverter.ToPersianDate(x.StartDate, "yyyy/MM/dd"),
+                        EndDate    = PersianDateConverter.ToPersianDate(x.EndDate,   "yyyy/MM/dd"),
+                        Status     = x.Status.Title,
+                        Subscription = x.Subscription.BillIdentifier,
+                        Address    = x.Subscription.Address.MainAddress,
+                        PostalCode = x.Subscription.Address.PostalCode,
+                        CompanyName    = x.Subscription.Address.CustomerProfile.CustomersLegal.CompanyName,
+                        NationalId     = x.Subscription.Address.CustomerProfile.CustomersLegal.NationalId,
+                        RegisterNumber = x.Subscription.Address.CustomerProfile.CustomersLegal.RegisterNumber,
+                        CeoFullName    = x.Subscription.Address.CustomerProfile.CustomersLegal.CeoFullName,
+                        CeoNationalId  = x.Subscription.Address.CustomerProfile.CustomersLegal.CeoNationalId,
+                        GazetteDate    = PersianDateConverter.ToPersianDate(x.Subscription.Address.CustomerProfile.CustomersLegal.GazetteDate, "yyyy/MM/dd"),
+                        WarrantyAmount = x.Warranties.OrderByDescending(w => w.Date).Select(w => (decimal?)w.Amount).FirstOrDefault(),
+                        WarrantyType   = x.Warranties.OrderByDescending(w => w.Date).Select(w => w.Type.Title).FirstOrDefault(),
+                    })
+                    .FirstOrDefault();
+                return (object?)c;
+            });
+
         public override ExecutionResult Update([FromBody] Contract item)
         {
             var warranty = Repository<Warranty>.GetLast(i => i.ContractId == item.Id);

@@ -43,6 +43,10 @@ namespace MatinPower.Server.Controllers.Customer
                     WarrantyFileId = i.Warranties.Any() && i.Warranties.OrderByDescending(w => w.Id).First().FileId.HasValue
                         ? i.Warranties.OrderByDescending(w => w.Id).First().FileId.ToString()
                         : null,
+                    ContractPowerKw    = i.ContractPowerKw,
+                    ContractVolumeKwh  = i.ContractVolumeKwh,
+                    ContractAmountRial = i.ContractAmountRial,
+                    PaymentDeadline    = i.PaymentDeadline.HasValue ? PersianDateConverter.ToPersianDate(i.PaymentDeadline.Value, "yyyy/MM/dd") : null,
                 }, i => i.Subscription.Address.CustomerProfileId == customerId.Value,
                    includes: new[] { "Warranties.Type", "Status", "Subscription" , "Subscription", "Subscription.Address", "Warranties" });
                 return (object)result;
