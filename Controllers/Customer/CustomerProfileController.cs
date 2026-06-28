@@ -1,7 +1,10 @@
 using MatinPower.Infrastructure;
 using MatinPower.Server.Models;
 using MatinPower.Server.Models.Body;
+using MatinPower.Server.Services;
 using Microsoft.AspNetCore.Mvc;
+using NLog;
+using System.Linq.Expressions;
 using TicketManagement.Infrastructure;
 using Microsoft.EntityFrameworkCore;
 
@@ -291,6 +294,53 @@ namespace MatinPower.Server.Controllers.Customer
         }
 
         [HttpPut]
+        [Route("[controller]/UpdateSubscription")]
+        public ExecutionResult UpdateSubscription([FromBody] UpdateSubscriptionRequest request)
+        {
+            var customerId = GetCustomerProfileId();
+            if (customerId == null)
+                return new ExecutionResult(ResultType.Danger, "خطا", "کاربر احراز هویت نشده.", 401);
+
+            var sub = Repository<Subscription>.GetListExtended(
+                i => i.Id == request.Id && i.Address.CustomerProfileId == customerId.Value,
+                includes: new[] { "Address" }).LastOrDefault();
+            if (sub == null)
+                return new ExecutionResult(ResultType.Danger, "خطا", "شناسه یافت نشد یا به این حساب تعلق ندارد.", 404);
+
+            var duplicate = Repository<Subscription>.GetLast(i => i.BillIdentifier == request.BillIdentifier && i.Id != request.Id);
+            if (duplicate != null)
+                return new ExecutionResult(ResultType.Danger, "خطا", "این شناسه قبض قبلاً ثبت شده است.", 400);
+
+            return RunExceptionProof(() =>
+            {
+                sub.BillIdentifier = request.BillIdentifier;
+                sub.ContractCapacityKw = request.ContractCapacityKw;
+                return Repository<Subscription>.UpdateItem(sub);
+            });
+        }
+
+        [HttpDelete]
+        [Route("[controller]/DeleteSubscription/{id}")]
+        public ExecutionResult DeleteSubscription(int id)
+        {
+            var customerId = GetCustomerProfileId();
+            if (customerId == null)
+                return new ExecutionResult(ResultType.Danger, "خطا", "کاربر احراز هویت نشده.", 401);
+
+            var sub = Repository<Subscription>.GetListExtended(
+                i => i.Id == id && i.Address.CustomerProfileId == customerId.Value,
+                includes: new[] { "Address" }).LastOrDefault();
+            if (sub == null)
+                return new ExecutionResult(ResultType.Danger, "خطا", "شناسه یافت نشد.", 404);
+
+            var hasBills = Repository<BillAnalysisReport>.GetLast(i => i.SubscriptionId == id);
+            if (hasBills != null)
+                return new ExecutionResult(ResultType.Danger, "خطا", "این شناسه دارای سابقه تحلیل قبض است و قابل حذف نیست.", 400);
+
+            return RunExceptionProof(() => Repository<Subscription>.DeleteItem(sub));
+        }
+
+        [HttpPut]
         [Route("[controller]/UpdateRealCustomer")]
         public ExecutionResult UpdateRealCustomer([FromBody] CustomerReal customer)
         {
@@ -415,7 +465,8 @@ namespace MatinPower.Server.Controllers.Customer
             if (customerId == null)
                 return new ExecutionResult(ResultType.Danger, "خطا", "کاربر احراز هویت نشده.", 401);
 
-            return RunExceptionProof(() =>
+            int? newTicketId = null;
+            var result = RunExceptionProof(() =>
             {
                 var ticket = Repository<Ticket>.InsertItem(new Ticket
                 {
@@ -424,6 +475,7 @@ namespace MatinPower.Server.Controllers.Customer
                     StatusId          = 1,
                     CreatedAt         = DateTime.Now,
                 });
+                newTicketId = ticket.Id;
 
                 var userId = new UseContext(new HttpContextAccessor()).GetUserId();
                 Repository<TicketMessage>.InsertItem(new TicketMessage
@@ -436,6 +488,71 @@ namespace MatinPower.Server.Controllers.Customer
 
                 return (object)ticket.Id;
             });
+
+            if (result.Code == 200 && newTicketId.HasValue)
+                _ = NotifyTicketAdminsAsync(newTicketId.Value, request.Subject);
+
+            return result;
+        }
+
+        private static readonly Logger _smsLog = LogManager.GetLogger("TicketSmsNotify");
+
+        private static async Task NotifyTicketAdminsAsync(int ticketId, string subject)
+        {
+            try
+            {
+                var mobiles = Repository<User>.Query(db =>
+                {
+                    // Find SiteMap entries related to the admin tickets page
+                    var ticketSiteIds = db.SiteMaps
+                        .Where(s => s.PhysicalPath != null &&
+                                    s.PhysicalPath.ToLower().Contains("ticket"))
+                        .Select(s => s.Id)
+                        .ToList();
+
+                    if (!ticketSiteIds.Any())
+                        return new List<string>();
+
+                    // Roles that have access to any of those SiteMap entries
+                    var roleIds = db.SiteMapRoles
+                        .Where(sr => ticketSiteIds.Contains(sr.SiteMapId))
+                        .Select(sr => sr.RoleId)
+                        .Distinct()
+                        .ToList();
+
+                    // User IDs that hold one of those roles
+                    var userIds = db.UserRoles
+                        .Where(ur => roleIds.Contains(ur.RoleId))
+                        .Select(ur => ur.UserId)
+                        .Distinct()
+                        .ToList();
+
+                    // Active admin users (CustomerProfileId == null) with a mobile
+                    return db.Users
+                        .Where(u => u.IsActive == true
+                                 && u.CustomerProfileId == null
+                                 && userIds.Contains(u.Id)
+                                 && u.Mobile != null)
+                        .Select(u => u.Mobile)
+                        .ToList();
+                });
+
+                AppDbLogger.Info("TicketSmsNotify", "Notify.Start",
+                    $"ticketId={ticketId} | subject={subject} | adminCount={mobiles.Count}");
+
+                foreach (var mobile in mobiles)
+                {
+                    var normalized = mobile.StartsWith("0") ? "+98" + mobile.Substring(1) : mobile;
+                    await SmsService.SendAsync(normalized,
+                        $"تیکت جدید در سامانه متین‌پاور ثبت شد.\nشماره تیکت: {ticketId}\nموضوع: {subject}");
+                }
+            }
+            catch (Exception ex)
+            {
+                _smsLog.Error(ex, "TicketSmsNotify failed for ticketId={0}", ticketId);
+                AppDbLogger.Error("TicketSmsNotify", "Notify.Exception",
+                    $"ticketId={ticketId} | {ex.Message}", ex);
+            }
         }
 
         [HttpPost]
@@ -491,38 +608,97 @@ namespace MatinPower.Server.Controllers.Customer
         [Route("[controller]/GetProfileMeta")]
         public ExecutionResult GetProfileMeta()
         {
-            var customerId = GetCustomerProfileId();
-            return RunExceptionProof(() =>
-            {
-                var profile = customerId.HasValue
-                    ? Repository<CustomerProfile>.GetLast(i => i.Id == customerId.Value)
-                    : null;
-                return (object)new
-                {
-                    identityDocFileId = profile?.IdentityDocFileId.HasValue == true
-                        ? profile.IdentityDocFileId.ToString()
-                        : (string?)null
-                };
-            });
+            return ExecutionResult.Success;
         }
 
         [HttpPost]
         [Route("[controller]/UpdateIdentityDoc")]
         public ExecutionResult UpdateIdentityDoc([FromBody] UpdateFileRequest request)
         {
+            return ExecutionResult.Success;
+        }
+
+        // ─── Customer Documents (max 5) ──────────────────────────────────────────
+
+        [HttpGet]
+        [Route("[controller]/GetDocuments")]
+        public ExecutionResult GetDocuments()
+        {
+            var customerId = GetCustomerProfileId();
+            try
+            {
+                Expression<Func<CustomerDocument, bool>> docsPred =
+                    d => d.CustomerProfileId == customerId.Value && !d.IsDeleted;
+                var docs = customerId.HasValue
+                    ? Repository<CustomerDocument>.GetListExtended(docsPred)
+                          .OrderBy(d => d.CreatedAt)
+                          .Select(d => new CustomerDocumentDto
+                          {
+                              Id        = d.Id,
+                              FileId    = d.FileId.ToString(),
+                              Title     = d.Title,
+                              CreatedAt = d.CreatedAt.ToString("yyyy-MM-dd"),
+                          })
+                          .ToList()
+                    : new List<CustomerDocumentDto>();
+
+                return new ExecutionResult(ResultType.Success, "موفق", "", 200, docs);
+            }
+            catch (Exception ex) { return HandleException(ex); }
+        }
+
+        [HttpPost]
+        [Route("[controller]/AddDocument")]
+        public ExecutionResult AddDocument([FromBody] AddDocumentRequest request)
+        {
+            var customerId = GetCustomerProfileId();
+            if (customerId == null)
+                return new ExecutionResult(ResultType.Danger, "خطا", "کاربر احراز هویت نشده.", 401);
+            if (request?.FileId == null)
+                return new ExecutionResult(ResultType.Danger, "خطا", "شناسه فایل الزامی است.", 400);
+
+            Expression<Func<CustomerDocument, bool>> activePred =
+                d => d.CustomerProfileId == customerId.Value && !d.IsDeleted;
+            var count = Repository<CustomerDocument>.GetListExtended(activePred).Count();
+            if (count >= 5)
+                return new ExecutionResult(ResultType.Warning, "محدودیت", "حداکثر ۵ مدرک مجاز است.", 400);
+
+            try
+            {
+                Repository<CustomerDocument>.InsertItem(new CustomerDocument
+                {
+                    CustomerProfileId = customerId.Value,
+                    FileId            = request.FileId.Value,
+                    Title             = request.Title?.Trim(),
+                    CreatedAt         = DateTime.Now,
+                    IsDeleted         = false,
+                });
+                return ExecutionResult.Success;
+            }
+            catch (Exception ex) { return HandleException(ex); }
+        }
+
+        [HttpDelete]
+        [Route("[controller]/DeleteDocument/{id}")]
+        public ExecutionResult DeleteDocument(int id)
+        {
             var customerId = GetCustomerProfileId();
             if (customerId == null)
                 return new ExecutionResult(ResultType.Danger, "خطا", "کاربر احراز هویت نشده.", 401);
 
-            var profile = Repository<CustomerProfile>.GetLast(i => i.Id == customerId.Value);
-            if (profile == null)
-                return new ExecutionResult(ResultType.Danger, "خطا", "پروفایل یافت نشد.", 404);
+            Expression<Func<CustomerDocument, bool>> docPred =
+                d => d.Id == id && d.CustomerProfileId == customerId.Value && !d.IsDeleted;
+            var doc = Repository<CustomerDocument>.GetLast(docPred);
+            if (doc == null)
+                return new ExecutionResult(ResultType.Danger, "خطا", "مدرک یافت نشد.", 404);
 
-            return RunExceptionProof(() =>
+            try
             {
-                profile.IdentityDocFileId = request.FileId;
-                Repository<CustomerProfile>.UpdateItem(profile);
-            });
+                doc.IsDeleted = true;
+                Repository<CustomerDocument>.UpdateItem(doc);
+                return ExecutionResult.Success;
+            }
+            catch (Exception ex) { return HandleException(ex); }
         }
 
         [HttpGet]

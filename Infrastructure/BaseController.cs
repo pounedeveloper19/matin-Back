@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using System.Text.RegularExpressions;
 
 namespace MatinPower.Infrastructure
 {
@@ -55,7 +56,9 @@ namespace MatinPower.Infrastructure
             }
             else if (innerMsg.Contains("Violation of UNIQUE KEY constraint"))
             {
-                message = "به علت وجود اطلاعات تکراری امکان ذخیره وجود ندارد";
+                var dupMatch = Regex.Match(innerMsg, @"The duplicate key value is \((.+?)\)");
+                var dupHint  = dupMatch.Success ? $" — مقدار تکراری: «{dupMatch.Groups[1].Value}»" : "";
+                message = $"اطلاعات تکراری است و امکان ذخیره وجود ندارد{dupHint}";
                 caption = "عملیات ذخیره با شکست مواجه شد";
             }
             else if (innerMsg.Contains("Data manipulation is not valid"))

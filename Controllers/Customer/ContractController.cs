@@ -47,6 +47,7 @@ namespace MatinPower.Server.Controllers.Customer
                     ContractVolumeKwh  = i.ContractVolumeKwh,
                     ContractAmountRial = i.ContractAmountRial,
                     PaymentDeadline    = i.PaymentDeadline.HasValue ? PersianDateConverter.ToPersianDate(i.PaymentDeadline.Value, "yyyy/MM/dd") : null,
+                    RejectionReason    = i.RejectionReason,
                 }, i => i.Subscription.Address.CustomerProfileId == customerId.Value,
                    includes: new[] { "Warranties.Type", "Status", "Subscription" , "Subscription", "Subscription.Address", "Warranties" });
                 return (object)result;

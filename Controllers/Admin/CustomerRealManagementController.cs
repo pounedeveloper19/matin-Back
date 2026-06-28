@@ -54,11 +54,18 @@ namespace MatinPower.Server.Controllers.Admin
         [HttpPost]
         public override ExecutionResult Insert([FromBody] Models.CustomersReal item)
         {
+            if (string.IsNullOrWhiteSpace(item.Password))
+                return new ExecutionResult(ResultType.Danger, "خطای ورود اطلاعات", "رمز عبور الزامی است.", 400);
+
             var existCustomer = Repository<Models.CustomersReal>.GetLast(i => i.NationalCode == item.NationalCode);
             if (existCustomer != null)
                 return new ExecutionResult(ResultType.Danger, "خطای ورود اطلاعات", "این کد ملی قبلا در سیستم ثبت شده است.", 5000);
 
-            return RunExceptionProof(() =>
+            var existUser = Repository<User>.GetLast(i => i.Mobile == item.Mobile);
+            if (existUser != null)
+                return new ExecutionResult(ResultType.Danger, "خطای ورود اطلاعات", "این شماره موبایل قبلاً در سیستم ثبت شده است.", 400);
+
+            try
             {
                 var profile = Repository<CustomerProfile>.InsertItem(new CustomerProfile
                 {
@@ -70,8 +77,36 @@ namespace MatinPower.Server.Controllers.Admin
                 item.Id = profile.Id;
                 item.CreatedAt = DateTime.Now;
                 Repository<Models.CustomersReal>.InsertItem(item);
-                return (object)profile.Id.ToString();
-            });
+
+                Repository<User>.InsertItem(new User
+                {
+                    FullName = $"{item.FirstName} {item.LastName}",
+                    Mobile = item.Mobile,
+                    Password = item.Password,
+                    IsActive = item.IsActive ?? true,
+                    CustomerProfileId = profile.Id,
+                });
+
+                return new ExecutionResult(ResultType.Success, "موفق", "", 200, profile.Id.ToString());
+            }
+            catch (Exception ex) { return HandleException(ex); }
+        }
+
+        protected override Models.CustomersReal GetItem(int id)
+        {
+            if (id == 0) return new Models.CustomersReal();
+            var item = Repository<Models.CustomersReal>.GetItemById(id);
+            if (item != null)
+            {
+                var profile = Repository<CustomerProfile>.GetItemById(id);
+                if (profile != null)
+                {
+                    item.IsActive = profile.IsActive;
+                    item.FamiliarityType = profile.FamiliarityType;
+                    item.CustomerTypeId = profile.CustomerTypeId;
+                }
+            }
+            return item;
         }
 
         protected override Models.CustomersReal PrepareUpdateItem(Models.CustomersReal item)

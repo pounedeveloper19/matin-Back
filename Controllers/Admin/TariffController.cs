@@ -49,5 +49,17 @@ namespace MatinPower.Server.Controllers.Admin
         {
             return id == 0 ? new Tariff() : Repository<Tariff>.GetItemById(id);
         }
+
+        [Route("[controller]/Insert")]
+        [HttpPost]
+        public override ExecutionResult Insert([FromBody] Tariff item)
+        {
+            try
+            {
+                Repository<Tariff>.InsertItem(item);
+                return new ExecutionResult(ResultType.Success, "موفق", "", 200, item.TariffId.ToString());
+            }
+            catch (Exception ex) { return HandleException(ex); }
+        }
     }
 }

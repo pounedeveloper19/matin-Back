@@ -1167,6 +1167,27 @@ namespace MatinPower.Server.Controllers.Customer
             });
         }
 
+        // ─── GetLastBill ──────────────────────────────────────────────────────
+
+        [HttpGet]
+        [Route("[controller]/GetLastBill/{subscriptionId}")]
+        public ExecutionResult GetLastBill(int subscriptionId) =>
+            RunExceptionProof(() =>
+                Repository<BillAnalysisReport>.Query(db =>
+                    (object?)db.BillAnalysisReports
+                        .Where(r => r.SubscriptionId == subscriptionId)
+                        .OrderByDescending(r => r.Year).ThenByDescending(r => r.Month)
+                        .Select(r => new
+                        {
+                            r.Year, r.Month,
+                            r.PeakCons, r.MidCons, r.LowCons,
+                            r.ContractDemandKw, r.ActualDemandKw,
+                            r.BilateralKwh, r.BilateralRate,
+                            r.ExchangeKwh, r.ExchangeRate,
+                            r.GreenLawKwh, r.GreenRate,
+                        })
+                        .FirstOrDefault()));
+
         // ─── GetBillHistory ───────────────────────────────────────────────────
 
         [HttpGet]

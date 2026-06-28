@@ -11,6 +11,12 @@ namespace MatinPower.Server.Models
         public int TypeId { get; set; }
     }
 
+    public class RejectContractRequest
+    {
+        public int ContractId { get; set; }
+        public string? Reason { get; set; }
+    }
+
     public class SubmitWarrantyRequest
     {
         public int ContractId { get; set; }

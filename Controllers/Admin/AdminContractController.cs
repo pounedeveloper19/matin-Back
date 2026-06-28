@@ -27,7 +27,7 @@ namespace MatinPower.Server.Controllers.Admin
                 i.ContractPowerKw,
                 i.ContractVolumeKwh,
                 i.ContractAmountRial,
-                PaymentDeadline = i.PaymentDeadline.HasValue ? i.PaymentDeadline.Value.ToString("yyyy-MM-dd") : null,
+                PaymentDeadline = i.PaymentDeadline.HasValue ? PersianDateConverter.ToPersianDate(i.PaymentDeadline.Value,("yyyy-MM-dd")) : null,
             }, filter, predicate, sortExpression: "StartDate", sortDirection: System.Web.Helpers.SortDirection.Descending,
             includes: new[] { "Warranties", "Subscription.Address.CustomerProfile.CustomersLegal", "Subscription.Address.CustomerProfile.CustomersReal", "Status" });
 
@@ -102,35 +102,61 @@ namespace MatinPower.Server.Controllers.Admin
         [HttpGet]
         public ExecutionResult GetContractPrintData(int contractId) =>
             RunExceptionProof(() =>
+                Repository<Contract>.Query(db =>
+                {
+                    var c = db.Contracts
+                        .Where(x => x.Id == contractId)
+                        .Select(x => new
+                        {
+                            x.ContractNumber,
+                            x.ContractRate,
+                            x.ContractPowerKw,
+                            x.ContractVolumeKwh,
+                            x.ContractAmountRial,
+                            StartDate  = PersianDateConverter.ToPersianDate(x.StartDate, "yyyy/MM/dd"),
+                            EndDate    = PersianDateConverter.ToPersianDate(x.EndDate,   "yyyy/MM/dd"),
+                            Status     = x.Status.Title,
+                            Subscription = x.Subscription.BillIdentifier,
+                            Address    = x.Subscription.Address.MainAddress,
+                            PostalCode = x.Subscription.Address.PostalCode,
+                            Province   = x.Subscription.Address.City.Province.Name,
+                            CompanyName    = x.Subscription.Address.CustomerProfile.CustomersLegal.CompanyName,
+                            NationalId     = x.Subscription.Address.CustomerProfile.CustomersLegal.NationalId,
+                            RegisterNumber = x.Subscription.Address.CustomerProfile.CustomersLegal.RegisterNumber,
+                            CeoFullName    = x.Subscription.Address.CustomerProfile.CustomersLegal.CeoFullName,
+                            CeoNationalId  = x.Subscription.Address.CustomerProfile.CustomersLegal.CeoNationalId,
+                            GazetteDate    = PersianDateConverter.ToPersianDate(x.Subscription.Address.CustomerProfile.CustomersLegal.GazetteDate, "yyyy/MM/dd"),
+                            PaymentDeadline = x.PaymentDeadline.HasValue ? PersianDateConverter.ToPersianDate(x.PaymentDeadline.Value, "yyyy/MM/dd") : null,
+                            WarrantyAmount = x.Warranties.OrderByDescending(w => w.Date).Select(w => (decimal?)w.Amount).FirstOrDefault(),
+                            WarrantyType   = x.Warranties.OrderByDescending(w => w.Date).Select(w => w.Type.Title).FirstOrDefault(),
+                        })
+                        .FirstOrDefault();
+                    return (object?)c;
+                }));
+
+        [Route("[controller]/RejectContract")]
+        [HttpPost]
+        public ExecutionResult RejectContract([FromBody] RejectContractRequest req)
+        {
+            var rejectionStatusId = Repository<EnumContractStatus>.Query(db =>
+                db.EnumContractStatuses
+                    .Where(s => s.Title == "عدم تایید")
+                    .Select(s => (int?)s.Id)
+                    .FirstOrDefault());
+
+            if (!rejectionStatusId.HasValue)
+                return new ExecutionResult(ResultType.Danger, "خطا", "وضعیت «عدم تایید» در سیستم تعریف نشده — ابتدا migration اجرا کنید", 400);
+
+            return RunExceptionProof(() =>
             {
-                using var db = DbContextProvider.CreateContext();
-                var c = db.Contracts
-                    .Where(x => x.Id == contractId)
-                    .Select(x => new
-                    {
-                        x.ContractNumber,
-                        x.ContractRate,
-                        x.ContractPowerKw,
-                        x.ContractVolumeKwh,
-                        x.ContractAmountRial,
-                        StartDate  = PersianDateConverter.ToPersianDate(x.StartDate, "yyyy/MM/dd"),
-                        EndDate    = PersianDateConverter.ToPersianDate(x.EndDate,   "yyyy/MM/dd"),
-                        Status     = x.Status.Title,
-                        Subscription = x.Subscription.BillIdentifier,
-                        Address    = x.Subscription.Address.MainAddress,
-                        PostalCode = x.Subscription.Address.PostalCode,
-                        CompanyName    = x.Subscription.Address.CustomerProfile.CustomersLegal.CompanyName,
-                        NationalId     = x.Subscription.Address.CustomerProfile.CustomersLegal.NationalId,
-                        RegisterNumber = x.Subscription.Address.CustomerProfile.CustomersLegal.RegisterNumber,
-                        CeoFullName    = x.Subscription.Address.CustomerProfile.CustomersLegal.CeoFullName,
-                        CeoNationalId  = x.Subscription.Address.CustomerProfile.CustomersLegal.CeoNationalId,
-                        GazetteDate    = PersianDateConverter.ToPersianDate(x.Subscription.Address.CustomerProfile.CustomersLegal.GazetteDate, "yyyy/MM/dd"),
-                        WarrantyAmount = x.Warranties.OrderByDescending(w => w.Date).Select(w => (decimal?)w.Amount).FirstOrDefault(),
-                        WarrantyType   = x.Warranties.OrderByDescending(w => w.Date).Select(w => w.Type.Title).FirstOrDefault(),
-                    })
-                    .FirstOrDefault();
-                return (object?)c;
+                var contract = Repository<Contract>.GetLast(c => c.Id == req.ContractId);
+                if (contract == null) throw new Exception("قرارداد یافت نشد");
+                contract.StatusId = rejectionStatusId.Value;
+                contract.RejectionReason = req.Reason;
+                Repository<Contract>.UpdateItem(contract);
+                return (object)true;
             });
+        }
 
         public override ExecutionResult Update([FromBody] Contract item)
         {

@@ -12,13 +12,11 @@ namespace MatinPower.Server.Controllers.Admin
         [HttpGet("List")]
         public ExecutionResult List() =>
             RunExceptionProof(() =>
-            {
-                using var db = DbContextProvider.CreateContext();
-                return db.Roles
-                    .OrderBy(r => r.Id)
-                    .Select(r => new { r.Id, r.Title, r.Description })
-                    .ToList();
-            });
+                Repository<Role>.Query(db =>
+                    (object)db.Roles
+                        .OrderBy(r => r.Id)
+                        .Select(r => new { r.Id, r.Title, r.Description })
+                        .ToList()));
 
         [HttpPost("Create")]
         public ExecutionResult Create([FromBody] RoleFormRequest request)
@@ -27,11 +25,7 @@ namespace MatinPower.Server.Controllers.Admin
                 return new ExecutionResult(ResultType.Danger, "خطا", "عنوان نقش الزامی است.", 400);
 
             return RunExceptionProof(() =>
-            {
-                using var db = DbContextProvider.CreateContext();
-                db.Roles.Add(new Role { Title = request.Title, Description = request.Description });
-                db.SaveChanges();
-            });
+                Repository<Role>.InsertItem(new Role { Title = request.Title, Description = request.Description }));
         }
 
         [HttpPut("Update")]
@@ -61,12 +55,14 @@ namespace MatinPower.Server.Controllers.Admin
 
             return RunExceptionProof(() =>
             {
-                using var db = DbContextProvider.CreateContext();
-                var siteMapRoles = db.SiteMapRoles.Where(sr => sr.RoleId == id).ToList();
-                db.SiteMapRoles.RemoveRange(siteMapRoles);
-                var userRoles = db.UserRoles.Where(ur => ur.RoleId == id).ToList();
-                db.UserRoles.RemoveRange(userRoles);
-                db.SaveChanges();
+                Repository<SiteMapRole>.ExecuteCommand(db =>
+                {
+                    var siteMapRoles = db.SiteMapRoles.Where(sr => sr.RoleId == id).ToList();
+                    db.SiteMapRoles.RemoveRange(siteMapRoles);
+                    var userRoles = db.UserRoles.Where(ur => ur.RoleId == id).ToList();
+                    db.UserRoles.RemoveRange(userRoles);
+                    db.SaveChanges();
+                });
                 Repository<Role>.DeleteItem(role);
             });
         }
@@ -74,24 +70,24 @@ namespace MatinPower.Server.Controllers.Admin
         [HttpGet("GetPermissions/{roleId}")]
         public ExecutionResult GetPermissions(int roleId) =>
             RunExceptionProof(() =>
-            {
-                using var db = DbContextProvider.CreateContext();
-                return db.SiteMapRoles
-                    .Where(sr => sr.RoleId == roleId)
-                    .Select(sr => sr.SiteMapId)
-                    .ToList();
-            });
+                Repository<SiteMapRole>.Query(db =>
+                    (object)db.SiteMapRoles
+                        .Where(sr => sr.RoleId == roleId)
+                        .Select(sr => sr.SiteMapId)
+                        .ToList()));
 
         [HttpPut("SetPermissions")]
         public ExecutionResult SetPermissions([FromBody] SetPermissionsRequest request) =>
             RunExceptionProof(() =>
             {
-                using var db = DbContextProvider.CreateContext();
-                var existing = db.SiteMapRoles.Where(sr => sr.RoleId == request.RoleId).ToList();
-                db.SiteMapRoles.RemoveRange(existing);
-                foreach (var siteMapId in request.SiteMapIds)
-                    db.SiteMapRoles.Add(new SiteMapRole { RoleId = request.RoleId, SiteMapId = siteMapId });
-                db.SaveChanges();
+                Repository<SiteMapRole>.ExecuteCommand(db =>
+                {
+                    var existing = db.SiteMapRoles.Where(sr => sr.RoleId == request.RoleId).ToList();
+                    db.SiteMapRoles.RemoveRange(existing);
+                    foreach (var siteMapId in request.SiteMapIds)
+                        db.SiteMapRoles.Add(new SiteMapRole { RoleId = request.RoleId, SiteMapId = siteMapId });
+                    db.SaveChanges();
+                });
             });
     }
 }

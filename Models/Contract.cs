@@ -29,6 +29,8 @@ public partial class Contract
 
     public DateTime? PaymentDeadline { get; set; }
 
+    public string? RejectionReason { get; set; }
+
     public virtual EnumContractStatus Status { get; set; } = null!;
 
     public virtual Subscription Subscription { get; set; } = null!;

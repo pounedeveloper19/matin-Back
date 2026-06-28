@@ -25,5 +25,6 @@
         public decimal? ContractVolumeKwh { get; set; }
         public decimal? ContractAmountRial { get; set; }
         public string? PaymentDeadline { get; set; }
+        public string? RejectionReason { get; set; }
     }
 }

@@ -12,6 +12,9 @@ namespace MatinPower.Server.Models
 
         [NotMapped]
         public int? CustomerTypeId { get; set; }
+
+        [NotMapped]
+        public string? Password { get; set; }
     }
 
     public partial class CustomersLegal
@@ -24,5 +27,14 @@ namespace MatinPower.Server.Models
 
         [NotMapped]
         public int? CustomerTypeId { get; set; }
+
+        [NotMapped]
+        public string? AgentFullName { get; set; }
+
+        [NotMapped]
+        public string? AgentMobile { get; set; }
+
+        [NotMapped]
+        public string? Password { get; set; }
     }
 }

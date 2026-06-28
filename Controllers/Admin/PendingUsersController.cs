@@ -11,13 +11,11 @@ namespace MatinPower.Server.Controllers.Admin
     public class PendingUsersController : BaseController
     {
         [HttpGet("List")]
-        public ExecutionResult List()
-        {
-            return RunExceptionProof(() =>
-            {
-                using var db = DbContextProvider.CreateContext();
-
-                var users = db.Users
+        public ExecutionResult List() =>
+            RunExceptionProof(() =>
+                Repository<User>.Query(db =>
+                {
+                    var users = db.Users
                     .Where(u => u.IsActive == false && u.CustomerProfileId != null)
                     .Select(u => new
                     {
@@ -63,15 +61,14 @@ namespace MatinPower.Server.Controllers.Admin
                                 .Select(a => a.MainAddress)
                                 .FirstOrDefault()
                             : null,
-                        HasIdentityDoc = u.CustomerProfile != null && u.CustomerProfile.IdentityDocFileId.HasValue,
+                        HasIdentityDoc = false,
                         HasAddress = u.CustomerProfile != null && u.CustomerProfile.Addresses.Any(),
                     })
-                    .OrderByDescending(u => u.Id)
-                    .ToList();
+                        .OrderByDescending(u => u.Id)
+                        .ToList();
 
-                return (object)users;
-            });
-        }
+                    return (object)users;
+                }));
 
         [HttpPut("Activate/{userId}")]
         public ExecutionResult Activate(int userId)

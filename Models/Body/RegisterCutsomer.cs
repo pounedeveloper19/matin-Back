@@ -75,6 +75,13 @@
         public decimal? ContractCapacityKw { get; set; }
     }
 
+    public class UpdateSubscriptionRequest
+    {
+        public int Id { get; set; }
+        public string BillIdentifier { get; set; }
+        public decimal? ContractCapacityKw { get; set; }
+    }
+
     public class CustomerTicket
     {
         public string Subject { get; set; }

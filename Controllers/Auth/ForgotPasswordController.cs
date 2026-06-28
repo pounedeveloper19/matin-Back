@@ -19,6 +19,7 @@ namespace MatinPower.Server.Controllers.Auth
         {
             _log = log;
         }
+
         [HttpPost]
         public async Task<ExecutionResult> SendOtp([FromBody] ForgotSendOtpRequest request)
         {
@@ -46,7 +47,7 @@ namespace MatinPower.Server.Controllers.Auth
 
                 var code = new Random().Next(100000, 999999).ToString();
 
-                using (var db = DbContextProvider.CreateContext())
+                Repository<OtpCode>.ExecuteCommand(db =>
                 {
                     // Invalidate previous unused OTPs for this mobile
                     var previous = db.OtpCodes
@@ -62,15 +63,17 @@ namespace MatinPower.Server.Controllers.Auth
                         IsUsed = false,
                         CreatedAt = DateTime.Now,
                     });
-                    await db.SaveChangesAsync();
-                }
+                    db.SaveChanges();
+                });
 
                 var smsTarget = targetMobile.StartsWith("0") ? "+98" + targetMobile.Substring(1) : targetMobile;
                 await SmsService.SendAsync(smsTarget, $"کد بازیابی رمز عبور سامانه متین پاور: {code}\nاین کد ۵ دقیقه اعتبار دارد.");
 
+                // \u200E = LTR mark, prevents RTL bidi from flipping the masked number
+                var masked = "\u200E" + new string('*', targetMobile.Length - 4) + targetMobile[^4..];
                 string msg = sentToCeo
-                    ? "کد تأیید به شماره موبایل مدیرعامل ارسال شد."
-                    : "کد تأیید به شماره موبایل شما ارسال شد.";
+                    ? $"کد تأیید به شماره مدیرعامل ({masked}) ارسال شد."
+                    : $"کد تأیید به شماره {masked} ارسال شد.";
                 return new ExecutionResult(ResultType.Success, "کد ارسال شد", msg, 200);
             }
             catch (Exception ex)
@@ -82,12 +85,11 @@ namespace MatinPower.Server.Controllers.Auth
         [HttpPost]
         public ExecutionResult VerifyOtp([FromBody] ForgotVerifyOtpRequest request)
         {
-            using var db = DbContextProvider.CreateContext();
-
-            var entry = db.OtpCodes
-                .Where(o => o.Mobile == request.Mobile && o.Code == request.Code && !o.IsUsed)
-                .OrderByDescending(o => o.CreatedAt)
-                .FirstOrDefault();
+            var entry = Repository<OtpCode>.Query(db =>
+                db.OtpCodes
+                    .Where(o => o.Mobile == request.Mobile && o.Code == request.Code && !o.IsUsed)
+                    .OrderByDescending(o => o.CreatedAt)
+                    .FirstOrDefault());
 
             if (entry == null)
                 return new ExecutionResult(ResultType.Danger, "خطا", "کد وارد شده اشتباه است.", 400);
@@ -108,12 +110,11 @@ namespace MatinPower.Server.Controllers.Auth
                 if (request.NewPassword.Length > 15)
                     return new ExecutionResult(ResultType.Danger, "خطا", "رمز عبور نباید بیشتر از ۱۵ کاراکتر باشد.", 400);
 
-                using var db = DbContextProvider.CreateContext();
-
-                var entry = db.OtpCodes
-                    .Where(o => o.Mobile == request.Mobile && o.Code == request.Code && !o.IsUsed)
-                    .OrderByDescending(o => o.CreatedAt)
-                    .FirstOrDefault();
+                var entry = Repository<OtpCode>.Query(db =>
+                    db.OtpCodes
+                        .Where(o => o.Mobile == request.Mobile && o.Code == request.Code && !o.IsUsed)
+                        .OrderByDescending(o => o.CreatedAt)
+                        .FirstOrDefault());
 
                 if (entry == null)
                     return new ExecutionResult(ResultType.Danger, "خطا", "کد نامعتبر است.", 400);
@@ -130,7 +131,7 @@ namespace MatinPower.Server.Controllers.Auth
 
                 // Mark OTP as used
                 entry.IsUsed = true;
-                await db.SaveChangesAsync();
+                Repository<OtpCode>.UpdateItem(entry);
 
                 _log.AuditTrail.Add(new AuditTrailEntry
                 {

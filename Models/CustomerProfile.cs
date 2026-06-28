@@ -15,8 +15,6 @@ public partial class CustomerProfile
 
     public int? FamiliarityType { get; set; }
 
-    public Guid? IdentityDocFileId { get; set; }
-
     public int? TariffCodeOptionId { get; set; }
 
     public virtual TariffCodeOption? TariffCodeOption { get; set; }

@@ -20,31 +20,28 @@ namespace MatinPower.Server.Controllers.Customer
             if (userId == null) return new ExecutionResult(ResultType.Danger, "خطا", "احراز هویت نشده", 401);
 
             return RunExceptionProof(() =>
-            {
-                using var db = DbContextProvider.CreateContext();
-                var orders = db.ElectricityOrders
-                    .Where(o => o.UserId == userId.Value)
-                    .OrderByDescending(o => o.OrderDate)
-                    .Select(o => new
-                    {
-                        o.Id,
-                        o.BillId,
-                        BillIdentifier = o.Bill.Subscription.BillIdentifier ?? "",
-                        o.RequestedKwh,
-                        EnergyType = o.EnergyType.Title ?? "",
-                        o.EnergyTypeId,
-                        o.PriceAtMoment,
-                        Status = o.Status.Title ?? "",
-                        o.StatusId,
-                        OrderDate = o.OrderDate != null ? o.OrderDate.Value.ToString("yyyy-MM-dd") : null,
-                        o.IsPriceRequest,
-                        PaymentCount = o.Payments.Count,
-                        LastPaymentStatusId = o.Payments.OrderByDescending(p => p.CreatedAt)
-                            .Select(p => (int?)p.StatusId).FirstOrDefault(),
-                    })
-                    .ToList();
-                return (object)orders;
-            });
+                Repository<ElectricityOrder>.Query(db =>
+                    (object)db.ElectricityOrders
+                        .Where(o => o.UserId == userId.Value)
+                        .OrderByDescending(o => o.OrderDate)
+                        .Select(o => new
+                        {
+                            o.Id,
+                            o.BillId,
+                            BillIdentifier = o.Bill.Subscription.BillIdentifier ?? "",
+                            o.RequestedKwh,
+                            EnergyType = o.EnergyType.Title ?? "",
+                            o.EnergyTypeId,
+                            o.PriceAtMoment,
+                            Status = o.Status.Title ?? "",
+                            o.StatusId,
+                            OrderDate = o.OrderDate != null ? o.OrderDate.Value.ToString("yyyy-MM-dd") : null,
+                            o.IsPriceRequest,
+                            PaymentCount = o.Payments.Count,
+                            LastPaymentStatusId = o.Payments.OrderByDescending(p => p.CreatedAt)
+                                .Select(p => (int?)p.StatusId).FirstOrDefault(),
+                        })
+                        .ToList()));
         }
 
         [HttpGet("{id}")]
@@ -54,40 +51,36 @@ namespace MatinPower.Server.Controllers.Customer
             if (userId == null) return new ExecutionResult(ResultType.Danger, "خطا", "احراز هویت نشده", 401);
 
             return RunExceptionProof(() =>
-            {
-                using var db = DbContextProvider.CreateContext();
-                var order = db.ElectricityOrders
-                    .Where(o => o.Id == id && o.UserId == userId.Value)
-                    .Select(o => new
-                    {
-                        o.Id,
-                        o.BillId,
-                        BillIdentifier = o.Bill.Subscription.BillIdentifier ?? "",
-                        o.RequestedKwh,
-                        EnergyType = o.EnergyType.Title ?? "",
-                        o.EnergyTypeId,
-                        o.PriceAtMoment,
-                        Status = o.Status.Title ?? "",
-                        o.StatusId,
-                        OrderDate = o.OrderDate != null ? o.OrderDate.Value.ToString("yyyy-MM-dd") : null,
-                        o.IsPriceRequest,
-                        Payments = o.Payments.Select(p => new
+                Repository<ElectricityOrder>.Query(db =>
+                    (object?)db.ElectricityOrders
+                        .Where(o => o.Id == id && o.UserId == userId.Value)
+                        .Select(o => new
                         {
-                            p.Id,
-                            p.Amount,
-                            Method = p.Method.Title ?? "",
-                            p.MethodId,
-                            Status = p.Status.Title ?? "",
-                            p.StatusId,
-                            p.ReferenceNumber,
-                            p.ReceiptFileId,
-                            CreatedAt = p.CreatedAt != null ? p.CreatedAt.Value.ToString("yyyy-MM-dd") : null,
-                        }).ToList(),
-                    })
-                    .FirstOrDefault();
-
-                return (object)order;
-            });
+                            o.Id,
+                            o.BillId,
+                            BillIdentifier = o.Bill.Subscription.BillIdentifier ?? "",
+                            o.RequestedKwh,
+                            EnergyType = o.EnergyType.Title ?? "",
+                            o.EnergyTypeId,
+                            o.PriceAtMoment,
+                            Status = o.Status.Title ?? "",
+                            o.StatusId,
+                            OrderDate = o.OrderDate != null ? o.OrderDate.Value.ToString("yyyy-MM-dd") : null,
+                            o.IsPriceRequest,
+                            Payments = o.Payments.Select(p => new
+                            {
+                                p.Id,
+                                p.Amount,
+                                Method = p.Method.Title ?? "",
+                                p.MethodId,
+                                Status = p.Status.Title ?? "",
+                                p.StatusId,
+                                p.ReferenceNumber,
+                                p.ReceiptFileId,
+                                CreatedAt = p.CreatedAt != null ? p.CreatedAt.Value.ToString("yyyy-MM-dd") : null,
+                            }).ToList(),
+                        })
+                        .FirstOrDefault()));
         }
 
         [HttpPost]
@@ -98,34 +91,36 @@ namespace MatinPower.Server.Controllers.Customer
 
             if (req.RequestedKwh <= 0)
                 return new ExecutionResult(ResultType.Danger, "خطای ورود اطلاعات", "مقدار درخواستی باید بزرگتر از صفر باشد.", 400);
-            int? GetCustomerId() => new UseContext(new HttpContextAccessor()).GetCustomerId();
-            var profileId = GetCustomerId();
 
-            using var db = DbContextProvider.CreateContext();
+            var profileId = new UseContext(new HttpContextAccessor()).GetCustomerId();
 
-            var subscription = db.Subscriptions
-                .Where(s => s.Id == req.SubscriptionId && s.Address.CustomerProfileId == profileId)
-                .Select(s => new { s.Id, s.AddressId })
-                .FirstOrDefault();
+            var subscription = Repository<Subscription>.Query(db =>
+                db.Subscriptions
+                    .Where(s => s.Id == req.SubscriptionId && s.Address.CustomerProfileId == profileId)
+                    .Select(s => new { s.Id, s.AddressId })
+                    .FirstOrDefault());
             if (subscription == null)
                 return new ExecutionResult(ResultType.Danger, "خطا", "اشتراک یافت نشد.", 404);
 
-            var address = db.Addresses
-                .Where(a => a.Id == subscription.AddressId)
-                .Select(a => new { a.CustomerProfileId, a.PowerEntityId })
-                .FirstOrDefault();
+            var address = Repository<Address>.Query(db =>
+                db.Addresses
+                    .Where(a => a.Id == subscription.AddressId)
+                    .Select(a => new { a.CustomerProfileId, a.PowerEntityId })
+                    .FirstOrDefault());
             if (address == null)
                 return new ExecutionResult(ResultType.Danger, "خطا", "آدرس اشتراک یافت نشد.", 404);
 
-            var profile = db.CustomerProfiles
-                .Where(p => p.Id == address.CustomerProfileId)
-                .Select(p => new { p.CustomerTypeId })
-                .FirstOrDefault();
+            var profile = Repository<CustomerProfile>.Query(db =>
+                db.CustomerProfiles
+                    .Where(p => p.Id == address.CustomerProfileId)
+                    .Select(p => new { p.CustomerTypeId })
+                    .FirstOrDefault());
 
-            var tariff = db.Tariffs
-                .Where(t => t.CustomerTypeId == profile.CustomerTypeId && t.PowerEntitiesId == address.PowerEntityId)
-                .Select(t => new { t.TariffId })
-                .FirstOrDefault();
+            var tariff = Repository<Tariff>.Query(db =>
+                db.Tariffs
+                    .Where(t => t.CustomerTypeId == profile!.CustomerTypeId && t.PowerEntitiesId == address.PowerEntityId)
+                    .Select(t => new { t.TariffId })
+                    .FirstOrDefault());
             if (tariff == null)
                 return new ExecutionResult(ResultType.Danger, "خطا", "تعرفه‌ای برای این اشتراک یافت نشد. با پشتیبانی تماس بگیرید.", 404);
 

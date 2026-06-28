@@ -53,11 +53,24 @@ namespace MatinPower.Server.Controllers.Admin
         [HttpPost]
         public override ExecutionResult Insert([FromBody] Models.CustomersLegal item)
         {
+            if (string.IsNullOrWhiteSpace(item.AgentFullName))
+                return new ExecutionResult(ResultType.Danger, "خطای ورود اطلاعات", "نام کامل نماینده الزامی است.", 400);
+
+            if (string.IsNullOrWhiteSpace(item.AgentMobile))
+                return new ExecutionResult(ResultType.Danger, "خطای ورود اطلاعات", "موبایل نماینده الزامی است.", 400);
+
+            if (string.IsNullOrWhiteSpace(item.Password))
+                return new ExecutionResult(ResultType.Danger, "خطای ورود اطلاعات", "رمز عبور نماینده الزامی است.", 400);
+
             var existCustomer = Repository<Models.CustomersLegal>.GetLast(i => i.NationalId == item.NationalId);
             if (existCustomer != null)
                 return new ExecutionResult(ResultType.Danger, "خطای ورود اطلاعات", "این شناسه ملی قبلا در سیستم ثبت شده است.", 5000);
 
-            return RunExceptionProof(() =>
+            var existUser = Repository<User>.GetLast(i => i.Mobile == item.AgentMobile);
+            if (existUser != null)
+                return new ExecutionResult(ResultType.Danger, "خطای ورود اطلاعات", "این شماره موبایل نماینده قبلاً در سیستم ثبت شده است.", 400);
+
+            try
             {
                 var profile = Repository<CustomerProfile>.InsertItem(new CustomerProfile
                 {
@@ -69,8 +82,36 @@ namespace MatinPower.Server.Controllers.Admin
                 item.Id = profile.Id;
                 item.CreatedAt = DateTime.Now;
                 Repository<Models.CustomersLegal>.InsertItem(item);
-                return (object)profile.Id.ToString();
-            });
+
+                Repository<User>.InsertItem(new User
+                {
+                    FullName = item.AgentFullName,
+                    Mobile = item.AgentMobile,
+                    Password = item.Password,
+                    IsActive = item.IsActive ?? true,
+                    CustomerProfileId = profile.Id,
+                });
+
+                return new ExecutionResult(ResultType.Success, "موفق", "", 200, profile.Id.ToString());
+            }
+            catch (Exception ex) { return HandleException(ex); }
+        }
+
+        protected override Models.CustomersLegal GetItem(int id)
+        {
+            if (id == 0) return new Models.CustomersLegal();
+            var item = Repository<Models.CustomersLegal>.GetItemById(id);
+            if (item != null)
+            {
+                var profile = Repository<CustomerProfile>.GetItemById(id);
+                if (profile != null)
+                {
+                    item.IsActive = profile.IsActive;
+                    item.FamiliarityType = profile.FamiliarityType;
+                    item.CustomerTypeId = profile.CustomerTypeId;
+                }
+            }
+            return item;
         }
 
         protected override Models.CustomersLegal PrepareUpdateItem(Models.CustomersLegal item)

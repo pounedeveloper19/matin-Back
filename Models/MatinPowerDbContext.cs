@@ -29,6 +29,8 @@ public partial class MatinPowerDbContext : DbContext
 
     public virtual DbSet<Contract> Contracts { get; set; }
 
+    public virtual DbSet<CustomerDocument> CustomerDocuments { get; set; }
+
     public virtual DbSet<CustomerProfile> CustomerProfiles { get; set; }
 
     public virtual DbSet<CustomersLegal> CustomersLegals { get; set; }
@@ -246,6 +248,7 @@ public partial class MatinPowerDbContext : DbContext
             entity.Property(e => e.ContractVolumeKwh).HasColumnType("decimal(18, 3)");
             entity.Property(e => e.ContractAmountRial).HasColumnType("decimal(18, 0)");
             entity.Property(e => e.PaymentDeadline).HasColumnType("date");
+            entity.Property(e => e.RejectionReason).HasMaxLength(500);
 
             entity.HasOne(d => d.Status).WithMany(p => p.Contracts)
                 .HasForeignKey(d => d.StatusId)
@@ -256,6 +259,20 @@ public partial class MatinPowerDbContext : DbContext
                 .HasForeignKey(d => d.SubscriptionId)
                 .OnDelete(DeleteBehavior.ClientSetNull)
                 .HasConstraintName("FK__Contracts__Subsc__02FC7413");
+        });
+
+        modelBuilder.Entity<CustomerDocument>(entity =>
+        {
+            entity.ToTable("CustomerDocuments");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.CreatedAt).HasDefaultValueSql("(getdate())");
+            entity.Property(e => e.IsDeleted).HasDefaultValue(false);
+            entity.Property(e => e.Title).HasMaxLength(200);
+
+            entity.HasOne(d => d.CustomerProfile)
+                  .WithMany()
+                  .HasForeignKey(d => d.CustomerProfileId)
+                  .OnDelete(DeleteBehavior.ClientSetNull);
         });
 
         modelBuilder.Entity<CustomerProfile>(entity =>

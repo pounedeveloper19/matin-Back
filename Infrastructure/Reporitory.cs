@@ -439,6 +439,13 @@ namespace TicketManagement.Infrastructure
                 command(entities);
             }
         }
+
+        /// <summary>اجرای query دلخواه روی DbContext و بازگشت نتیجه — برای query های پیچیده با join</summary>
+        public static TResult Query<TResult>(Func<MatinPowerDbContext, TResult> query)
+        {
+            using var entities = DbContextProvider.CreateContext();
+            return query(entities);
+        }
         public static string? GetTableName()
         {
             using (var entities = DbContextProvider.CreateContext())

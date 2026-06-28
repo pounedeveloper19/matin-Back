@@ -13,16 +13,10 @@ namespace MatinPower.Server.Controllers.Admin
     public class AdminTooltipController : BaseController
     {
         [HttpGet]
-        public ExecutionResult GetList()
-        {
-            return RunExceptionProof(() =>
-            {
-                using var db = DbContextProvider.CreateContext();
-                return (object)db.PageTooltips
-                    .OrderByDescending(t => t.Id)
-                    .ToList();
-            });
-        }
+        public ExecutionResult GetList() =>
+            RunExceptionProof(() =>
+                Repository<PageTooltip>.Query(db =>
+                    (object)db.PageTooltips.OrderByDescending(t => t.Id).ToList()));
 
         [HttpPost]
         public ExecutionResult Insert([FromBody] PageTooltip item)
