@@ -8,9 +8,6 @@ namespace MatinPower.Server.Controllers.Auth
 {
     public class AuthController : BaseController
     {
-        /// <summary>
-        /// ورود به سیستم با شماره موبایل و رمز عبور
-        /// </summary>
         [HttpPost]
         [Route("[controller]/Login")]
         public ExecutionResult Login([FromBody] LoginRequest request)

@@ -105,6 +105,10 @@ public partial class MatinPowerDbContext : DbContext
 
     public virtual DbSet<Warranty> Warranties { get; set; }
 
+    public virtual DbSet<OtpCode> OtpCodes { get; set; }
+
+    public virtual DbSet<PageTooltip> PageTooltips { get; set; }
+
     protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
     {
         IConfigurationRoot configuration = new ConfigurationBuilder()
@@ -750,6 +754,8 @@ public partial class MatinPowerDbContext : DbContext
             entity.HasKey(e => e.Id);
             entity.HasIndex(e => new { e.TariffCodeOptionId, e.Year }, "UC_TariffCodeOptionRate").IsUnique();
             entity.Property(e => e.RateRialPerKwh).HasColumnType("decimal(18, 4)");
+            entity.Property(e => e.RatePeakRialPerKwh).HasColumnType("decimal(18, 4)").HasDefaultValue(0m);
+            entity.Property(e => e.RateLowRialPerKwh).HasColumnType("decimal(18, 4)").HasDefaultValue(0m);
             entity.HasOne(d => d.TariffCodeOption).WithMany(p => p.Rates)
                 .HasForeignKey(d => d.TariffCodeOptionId)
                 .OnDelete(DeleteBehavior.Cascade)
@@ -762,6 +768,24 @@ public partial class MatinPowerDbContext : DbContext
                 .HasForeignKey(d => d.TariffCodeOptionId)
                 .OnDelete(DeleteBehavior.SetNull)
                 .HasConstraintName("FK_CustomerProfile_TariffCodeOption");
+        });
+
+        modelBuilder.Entity<OtpCode>(entity =>
+        {
+            entity.ToTable("OtpCode");
+            entity.Property(e => e.Mobile).HasMaxLength(20);
+            entity.Property(e => e.Code).HasMaxLength(6);
+            entity.Property(e => e.CreatedAt).HasDefaultValueSql("(getdate())");
+        });
+
+        modelBuilder.Entity<PageTooltip>(entity =>
+        {
+            entity.ToTable("PageTooltip");
+            entity.Property(e => e.PageKey).HasMaxLength(100);
+            entity.Property(e => e.FieldKey).HasMaxLength(100);
+            entity.Property(e => e.Title).HasMaxLength(200);
+            entity.Property(e => e.IsActive).HasDefaultValue(true);
+            entity.Property(e => e.CreatedAt).HasDefaultValueSql("(getdate())");
         });
 
         OnModelCreatingPartial(modelBuilder);

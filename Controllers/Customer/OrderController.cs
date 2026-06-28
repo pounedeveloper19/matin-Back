@@ -13,14 +13,6 @@ namespace MatinPower.Server.Controllers.Customer
     {
         private int? GetUserId() => new UseContext(new HttpContextAccessor()).GetUserId();
 
-        private int? GetCustomerProfileId()
-        {
-            var userId = GetUserId();
-            if (userId == null) return null;
-            var user = Repository<User>.GetLast(i => i.Id == userId.Value);
-            return user?.CustomerProfileId;
-        }
-
         [HttpGet]
         public ExecutionResult GetMyOrders()
         {
@@ -106,8 +98,8 @@ namespace MatinPower.Server.Controllers.Customer
 
             if (req.RequestedKwh <= 0)
                 return new ExecutionResult(ResultType.Danger, "خطای ورود اطلاعات", "مقدار درخواستی باید بزرگتر از صفر باشد.", 400);
-
-            var profileId = GetCustomerProfileId();
+            int? GetCustomerId() => new UseContext(new HttpContextAccessor()).GetCustomerId();
+            var profileId = GetCustomerId();
 
             using var db = DbContextProvider.CreateContext();
 

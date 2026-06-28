@@ -1,4 +1,5 @@
 ﻿using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using System.Linq.Expressions;
 using System.Web.Helpers;
@@ -114,7 +115,24 @@ namespace MatinPower.Infrastructure
 
         protected virtual T PrepareDeleteItem(T item) => item;
 
-        protected virtual void DataChanged(T item, EntityState state) { }
+        protected virtual void DataChanged(T item, EntityState state)
+        {
+            try
+            {
+                var userId   = new UseContext(new HttpContextAccessor()).GetUserId();
+                var action   = state switch
+                {
+                    EntityState.Added    => AuditAction.Create,
+                    EntityState.Modified => AuditAction.Update,
+                    EntityState.Deleted  => AuditAction.Delete,
+                    _                    => AuditAction.Update,
+                };
+                var idObj    = item.GetProperty("Id");
+                int? recordId = idObj is int i ? i : null;
+                AuditLogger.Log(userId, action, typeof(T).Name, recordId);
+            }
+            catch { }
+        }
 
     }
 }

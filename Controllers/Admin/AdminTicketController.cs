@@ -1,6 +1,7 @@
 using MatinPower.Infrastructure;
 using MatinPower.Server.Models;
 using MatinPower.Server.Models.Body;
+using MatinPower.Server.Services;
 using Microsoft.AspNetCore.Mvc;
 using TicketManagement.Infrastructure;
 
@@ -59,17 +60,42 @@ namespace MatinPower.Server.Controllers.Admin
             if (userId == null)
                 return new ExecutionResult(ResultType.Danger, "خطا", "احراز هویت نشده.", 401);
 
-            return RunExceptionProof(() =>
+            var result = RunExceptionProof(() =>
             {
                 Repository<TicketMessage>.InsertItem(new TicketMessage
                 {
-                    TicketId = request.TicketId,
-                    Body = request.Body,
-                    FileId = request.FileId,
+                    TicketId     = request.TicketId,
+                    Body         = request.Body,
+                    FileId       = request.FileId,
                     SenderUserId = userId.Value,
-                    CreatedAt = DateTime.Now,
+                    CreatedAt    = DateTime.Now,
                 });
             });
+
+            if (result.Code == 200)
+            {
+                var ticket = Repository<Ticket>.GetLast(t => t.Id == request.TicketId);
+                if (ticket != null)
+                {
+                    var mobile = GetCustomerMobile(ticket.CustomerProfileId);
+                    if (!string.IsNullOrEmpty(mobile))
+                    {
+                        var smsMobile = mobile.StartsWith("0") ? "+98" + mobile.Substring(1) : mobile;
+                        _ = SmsService.SendAsync(smsMobile, "پاسخ جدیدی برای تیکت شما در سامانه متین پاور ثبت شد. لطفاً وارد سامانه شوید.");
+                    }
+                }
+            }
+
+            return result;
+        }
+
+        private static string? GetCustomerMobile(int customerProfileId)
+        {
+            var real = Repository<CustomersReal>.GetLast(r => r.Id == customerProfileId);
+            if (real != null) return real.Mobile;
+
+            var legal = Repository<CustomersLegal>.GetLast(l => l.Id == customerProfileId);
+            return legal?.CeoMobile;
         }
 
         [HttpPut]

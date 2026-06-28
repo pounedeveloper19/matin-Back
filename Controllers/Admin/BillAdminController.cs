@@ -31,7 +31,7 @@ namespace MatinPower.Server.Controllers.Admin
                         r.CostWithoutMatin,
                         r.CostWithMatin,
                         r.NetSaving,
-                        r.CreatedAt,
+                        CreatedAt = PersianDateConverter.ToPersianDate(r.CreatedAt, "yyyy/MM/dd"),
                     })
                     .ToList();
                 return (object)reports;
@@ -52,7 +52,7 @@ namespace MatinPower.Server.Controllers.Admin
                 i.CostWithoutMatin,
                 i.CostWithMatin,
                 i.NetSaving,
-                i.CreatedAt,
+                CreatedAt = PersianDateConverter.ToPersianDate(i.CreatedAt, "yyyy/MM/dd"),
             }, filter, predicate, sortExpression: "CreatedAt", sortDirection: System.Web.Helpers.SortDirection.Descending, includes: new[] { "Subscription" });
 
             return new PaginationResult(result.Item1, filter.PageNumber, filter.PageSize, result.Item2, result.Item3, result.Item4);

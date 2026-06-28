@@ -1,4 +1,7 @@
 using MatinPower.Infrastructure;
+using MatinPower.Server.Application.Calculation;
+using MatinPower.Server.Application.Optimization;
+using MatinPower.Server.Application.Optimization.Portfolio;
 using MatinPower.Server.Models;
 using MatinPower.Server.Models.Body;
 using Microsoft.AspNetCore.Mvc;
@@ -14,33 +17,46 @@ namespace MatinPower.Server.Controllers.Customer
             "مهر","آبان","آذر","دی","بهمن","اسفند"
         };
 
-        private const int TOU_PEAK        = 1;
-        private const int TOU_MID         = 2;
-        private const int TOU_LOW         = 3;
-        private const int TOU_FRIDAY_PEAK = 4;
 
         // ─── Helpers ──────────────────────────────────────────────────────────
 
         private static int DaysInJalaliMonth(int month) =>
-            month <= 6 ? 31 : month <= 11 ? 30 : 29;
+            CalculationConstants.DaysInJalaliMonth(month);
 
-        private (int peak, int mid, int low, int fridayPeak) GetTouHours(int month, int powerEntityId)
+        private (int peak, int mid, int low, bool found) GetTouHours(int month, int powerEntityId)
         {
-            var schedule = Repository<Touschedule>.GetList(null, i =>
+            // Resolve type IDs dynamically from title — same logic as the admin frontend.
+            // Do NOT use hardcoded int constants: the DB order (1/2/3) may not match
+            // peak/mid/low in every installation.
+            var types = Repository<EnumToutype>.GetListExtended((string)null, null, System.Web.Helpers.SortDirection.Ascending, null);
+            int peakTypeId = types.FirstOrDefault(t => t.Title != null && (t.Title.Contains("اوج") || t.Title.Contains("پیک")))?.Id ?? -1;
+            int midTypeId  = types.FirstOrDefault(t => t.Title != null &&  t.Title.Contains("میان"))?.Id ?? -1;
+            int lowTypeId  = types.FirstOrDefault(t => t.Title != null && (t.Title.Contains("کم")   || t.Title.Contains("کمبار"))
+                                                     && !t.Title.Contains("اوج"))?.Id ?? -1;
+
+            var schedule = Repository<Touschedule>.GetListExtended(i =>
                 i.MonthNumber == month &&
                 (powerEntityId == 0 || i.PowerEntityId == powerEntityId));
 
-            int peak   = schedule.Item1.Where(s => s.ToutypeId == TOU_PEAK).Select(s => s.HourNumber).Distinct().Count();
-            int mid    = schedule.Item1.Where(s => s.ToutypeId == TOU_MID).Select(s => s.HourNumber).Distinct().Count();
-            int low    = schedule.Item1.Where(s => s.ToutypeId == TOU_LOW).Select(s => s.HourNumber).Distinct().Count();
-            int friday = schedule.Item1.Where(s => s.ToutypeId == TOU_FRIDAY_PEAK).Select(s => s.HourNumber).Distinct().Count();
+            int peak = schedule.Where(s => s.ToutypeId == peakTypeId).Select(s => s.HourNumber).Distinct().Count();
+            int mid  = schedule.Where(s => s.ToutypeId == midTypeId) .Select(s => s.HourNumber).Distinct().Count();
+            int low  = schedule.Where(s => s.ToutypeId == lowTypeId) .Select(s => s.HourNumber).Distinct().Count();
 
-            if (peak + mid + low == 0) { peak = 5; mid = 12; low = 7; }
+            bool found = (peak + mid + low) > 0;
+            if (!found)
+            {
+                peak = CalculationConstants.DefaultPeakHoursPerDay;
+                mid  = CalculationConstants.DefaultMidHoursPerDay;
+                low  = CalculationConstants.DefaultLowHoursPerDay;
+            }
 
-            return (peak, mid, low, friday);
+            return (peak, mid, low, found);
         }
 
-        // ─── Legacy: ManualAnalysis ───────────────────────────────────────────
+        // ─── LEGACY: ManualAnalysis ───────────────────────────────────────────
+        // Status: LEGACY — Feature Freeze. Bug-fix only. No new features.
+        // Canonical engine: AdvancedAnalysis
+        // Migration: customers using ManualAnalysis should be moved to AdvancedAnalysis flow.
 
         [HttpPost]
         [Route("[controller]/ManualAnalysis")]
@@ -71,7 +87,8 @@ namespace MatinPower.Server.Controllers.Customer
                 var address = Repository<Address>.GetLast(i => i.Id == subscription.AddressId);
                 int powerEntityId = address?.PowerEntityId ?? 0;
 
-                var (peakHours, midHours, lowHours, fridayPeakHours) = GetTouHours(req.Month, powerEntityId);
+                var (peakHours, midHours, lowHours, _) = GetTouHours(req.Month, powerEntityId);
+                int fridayPeakHours = 0;
 
                 int     daysInMonth           = DaysInJalaliMonth(req.Month);
                 decimal totalContracted       = contractCapacity * daysInMonth * 24m;
@@ -202,7 +219,8 @@ namespace MatinPower.Server.Controllers.Customer
                 var address = Repository<Address>.GetLast(i => i.Id == subscription.AddressId);
                 int powerEntityId = address?.PowerEntityId ?? 0;
 
-                var (peakHours, midHours, lowHours, fridayPeakHours) = GetTouHours(req.Month, powerEntityId);
+                var (peakHours, midHours, lowHours, _) = GetTouHours(req.Month, powerEntityId);
+                int fridayPeakHours = 0;
 
                 int     daysInMonth = DaysInJalaliMonth(req.Month);
                 decimal monthHours  = daysInMonth * 24m;
@@ -309,12 +327,9 @@ namespace MatinPower.Server.Controllers.Customer
 
         // ─── Advanced Bill Analysis (Excel model) ─────────────────────────────
 
-        // درصد مشمول ماده سبز: 4،ب=0، دیماند≤1000=0، 1404=3%، 1405=4%، بقیه=5%
-        private static decimal GreenLawPercent(bool isType4B, decimal actualDemandKw, int year)
-        {
-            if (isType4B || actualDemandKw <= 1000m) return 0m;
-            return year == 1404 ? 0.03m : year == 1405 ? 0.04m : 0.05m;
-        }
+        // درصد مشمول ماده سبز: delegated to CalculationConstants (single source of truth)
+        private static decimal GreenLawPercent(bool isType4B, decimal actualDemandKw, int year) =>
+            CalculationConstants.GetArticle16Percent(isType4B, actualDemandKw, year);
 
         [HttpPost]
         [Route("[controller]/AdvancedAnalysis")]
@@ -358,20 +373,27 @@ namespace MatinPower.Server.Controllers.Customer
             decimal creditMul  = tariffOption?.CreditMultiplier  ?? 0.75m;
             bool isType4B      = tariffCode?.Code?.Contains("ب") == true && tariffCode.Code.Contains("4");
 
+            int powerEntityId = address?.PowerEntityId ?? 0;
+            var (peakH, midH, lowH, touFound) = GetTouHours(req.Month, powerEntityId);
+            if (!touFound)
+                return new ExecutionResult(ResultType.Danger, "خطا",
+                    "برنامه ساعات TOU برای این ماه تعریف نشده است. ابتدا جدول ساعات را از پنل مدیریت تنظیم کنید.", 400);
+
             return RunExceptionProof(() =>
             {
-                // ── 1. ساعات TOU ──────────────────────────────────────────
-                int powerEntityId = address?.PowerEntityId ?? 0;
-                var (peakH, midH, lowH, _) = GetTouHours(req.Month, powerEntityId);
-
                 // ── 2. مصرف برق ───────────────────────────────────────────
+                decimal touTotal  = (decimal)(peakH + midH + lowH); // > 0 (touFound guard)
+                decimal peakRatio = (decimal)peakH / touTotal;
+                decimal midRatio  = (decimal)midH  / touTotal;
+                decimal lowRatio  = (decimal)lowH  / touTotal;
+
                 decimal peakKwh, midKwh, lowKwh;
                 if (req.ConsumptionMode == "total" && req.TotalKwh.HasValue)
                 {
                     decimal total = req.TotalKwh.Value;
-                    peakKwh = total * peakH / 24m;
-                    midKwh  = total * midH  / 24m;
-                    lowKwh  = total * lowH  / 24m;
+                    peakKwh = total * peakRatio;
+                    midKwh  = total * midRatio;
+                    lowKwh  = total * lowRatio;
                 }
                 else
                 {
@@ -381,11 +403,16 @@ namespace MatinPower.Server.Controllers.Customer
                 }
                 decimal totalKwh = peakKwh + midKwh + lowKwh;
 
-                // ── 3. نرخ تعرفه صنعتی ────────────────────────────────────
-                // میان = پایه، کم = نصف، اوج = دو برابر
-                decimal tariffMid  = tariffRate.RateRialPerKwh;
-                decimal tariffLow  = tariffMid / 2m;
-                decimal tariffPeak = tariffMid * 2m;
+                // ── 3. نرخ تعرفه — برای ماده ۱۶ و نمایش در جدول مقایسه ──
+                // tariffMid: نرخ پشتیبانی میان‌بار (از TariffCodeOptionRate)
+                // displayPeak/Low: فقط برای نمایش ستون "تعرفه صنعتی" در UI
+                decimal tariffMid   = tariffRate.RateRialPerKwh;
+                decimal displayPeak = tariffRate.RatePeakRialPerKwh > 0
+                    ? tariffRate.RatePeakRialPerKwh
+                    : tariffMid * CalculationConstants.TouPeakMultiplier;
+                decimal displayLow  = tariffRate.RateLowRialPerKwh > 0
+                    ? tariffRate.RateLowRialPerKwh
+                    : tariffMid * CalculationConstants.TouLowMultiplier;
 
                 // ── 4. نرخ‌های بازار ──────────────────────────────────────
                 decimal mktPeak      = marketRate.MarketPeak ?? 0;    // حداکثر اوج
@@ -407,17 +434,17 @@ namespace MatinPower.Server.Controllers.Customer
                 decimal greenSubjectKwh = totalKwh * greenPercent;  // مصرف مشمول قانون جهش
 
                 // ── 7. توزیع انرژی خریداری‌شده بر اساس نسبت ساعات TOU ────
-                decimal greenPeak = req.GreenLawKwh * (peakH / 24m);
-                decimal greenMid  = req.GreenLawKwh * (midH  / 24m);
-                decimal greenLow  = req.GreenLawKwh * (lowH  / 24m);
+                decimal greenPeak = req.GreenLawKwh * peakRatio;
+                decimal greenMid  = req.GreenLawKwh * midRatio;
+                decimal greenLow  = req.GreenLawKwh * lowRatio;
 
-                decimal bilateralPeak = req.BilateralKwh * (peakH / 24m);
-                decimal bilateralMid  = req.BilateralKwh * (midH  / 24m);
-                decimal bilateralLow  = req.BilateralKwh * (lowH  / 24m);
+                decimal bilateralPeak = req.BilateralKwh * peakRatio;
+                decimal bilateralMid  = req.BilateralKwh * midRatio;
+                decimal bilateralLow  = req.BilateralKwh * lowRatio;
 
-                decimal exchangePeak = req.ExchangeKwh * (peakH / 24m);
-                decimal exchangeMid  = req.ExchangeKwh * (midH  / 24m);
-                decimal exchangeLow  = req.ExchangeKwh * (lowH  / 24m);
+                decimal exchangePeak = req.ExchangeKwh * peakRatio;
+                decimal exchangeMid  = req.ExchangeKwh * midRatio;
+                decimal exchangeLow  = req.ExchangeKwh * lowRatio;
 
                 // ── 8. کل انرژی بازار هر بازه (دوجانبه+بورس+سبز) ────────
                 decimal mktEnergyPeak = bilateralPeak + exchangePeak + greenPeak;
@@ -429,7 +456,8 @@ namespace MatinPower.Server.Controllers.Customer
                 decimal remainingMid  = Math.Max(0, midKwh  - mktEnergyMid);
                 decimal remainingLow  = Math.Max(0, lowKwh  - mktEnergyLow);
 
-                // ── 10. بهای انرژی (Σ maxWhole × مصرف یا باقیمانده) ──────
+                // ── 10. بهای انرژی شبکه = حداکثر نرخ بازار × ضریب جریمه (بدون هاردکد) ─
+                // maxWholePeak/Mid/Low از Step 5 = mktBand × penaltyMul
                 decimal energyBefore = peakKwh * maxWholePeak + midKwh * maxWholeMid + lowKwh * maxWholeLow;
                 decimal energyAfter  = remainingPeak * maxWholePeak + remainingMid * maxWholeMid + remainingLow * maxWholeLow;
 
@@ -440,34 +468,29 @@ namespace MatinPower.Server.Controllers.Customer
                 decimal article16Before = greenSubjectKwh * Math.Max(greenDiff, 0);
                 decimal article16After  = Math.Max((greenSubjectKwh - req.GreenLawKwh) * greenDiff, 0);
 
-                // ── 12. مابه التفاوت اجرای مقررات ────────────────────────
-                // = Σ مصرف_بازه × max(تعرفه_بازه - متوسط بازار, 0)
-                // قبل: مصرف کامل؛ بعد: مصرف منهای سبز
-                decimal regPeak = Math.Max(tariffPeak - avgMarket, 0);
-                decimal regMid  = Math.Max(tariffMid  - avgMarket, 0);
-                decimal regLow  = Math.Max(tariffLow  - avgMarket, 0);
-
-                decimal regulatoryBefore = peakKwh * regPeak + midKwh * regMid + lowKwh * regLow;
-                decimal regulatoryAfter  =
-                    (peakKwh - greenPeak) * regPeak +
-                    (midKwh  - greenMid)  * regMid  +
-                    (lowKwh  - greenLow)  * regLow;
-
-                // ── 13. بستانکاری خرید خارج از بازار ────────────────────
-                // = Σ min((مصرف - همه خریدها) × نرخ تابلو × 0.75, 0)
-                decimal creditPeak = Math.Min((peakKwh - mktEnergyPeak) * boardPeak * creditMul, 0);
-                decimal creditMid  = Math.Min((midKwh  - mktEnergyMid)  * boardMid  * creditMul, 0);
-                decimal creditLow  = Math.Min((lowKwh  - mktEnergyLow)  * boardLow  * creditMul, 0);
+                // ── 12. بستانکاری — Model A: Market Settlement Credit ─────────
+                // تصمیم معماری (1404): برای AdvancedAnalysis از Model A استفاده می‌شود.
+                // Model A = market settlement: وقتی خرید بازار > مصرف در یک بازه TOU،
+                //           مازاد به نرخ تابلو × creditMul بستانکار می‌شود.
+                // Model B (utility billing) = reserved for ManualAnalysis (legacy contract billing).
+                //
+                // فرمول: Σ min((مصرف_بازه - خرید_بازار_بازه) × نرخ_تابلو × creditMul, 0)
+                // - وقتی مصرف < خرید: مقدار منفی → کاهش costWithMatin (بستانکاری)
+                // - وقتی مصرف > خرید: مقدار مثبت → Math.Min(...,0) = 0 (جریمه‌ای نیست)
+                decimal creditPeak  = Math.Min((peakKwh - mktEnergyPeak) * boardPeak * creditMul, 0);
+                decimal creditMid   = Math.Min((midKwh  - mktEnergyMid)  * boardMid  * creditMul, 0);
+                decimal creditLow   = Math.Min((lowKwh  - mktEnergyLow)  * boardLow  * creditMul, 0);
                 decimal totalCredit = creditPeak + creditMid + creditLow;
 
-                // ── 14. صورتحساب‌های بازار ───────────────────────────────
+                // ── 13. صورتحساب‌های بازار ───────────────────────────────
                 decimal bilateralBill = req.BilateralKwh * req.BilateralRate;
                 decimal exchangeBill  = req.ExchangeKwh  * req.ExchangeRate;
                 decimal greenBill     = req.GreenLawKwh  * req.GreenRate;
 
-                // ── 15. هزینه نهایی ───────────────────────────────────────
-                decimal costWithoutMatin = energyBefore + article16Before + regulatoryBefore;
-                decimal costWithMatin    = energyAfter  + article16After  + regulatoryAfter
+                // ── 14. هزینه نهایی — مطابق PDF spec ────────────────────────
+                // FinalCost = GridCost + Article16 + ExchangeCost + BilateralCost + GreenCost - Credits
+                decimal costWithoutMatin = energyBefore + article16Before;
+                decimal costWithMatin    = energyAfter  + article16After
                                          + totalCredit
                                          + bilateralBill + exchangeBill + greenBill;
 
@@ -475,7 +498,7 @@ namespace MatinPower.Server.Controllers.Customer
                 decimal savingPercent = costWithoutMatin > 0
                     ? Math.Round(netSaving / costWithoutMatin * 100m, 2) : 0;
 
-                // ── 16. ذخیره در دیتابیس ──────────────────────────────────
+                // ── 15. ذخیره در دیتابیس ──────────────────────────────────
                 if (req.SaveReport)
                 {
                     Repository<BillAnalysisReport>.InsertItem(new BillAnalysisReport
@@ -517,9 +540,9 @@ namespace MatinPower.Server.Controllers.Customer
                     PeakHoursPerDay     = peakH,
                     MidHoursPerDay      = midH,
                     LowHoursPerDay      = lowH,
-                    TariffPeakRial      = tariffPeak,
-                    TariffMidRial       = tariffMid,
-                    TariffLowRial       = tariffLow,
+                    TariffPeakRial      = displayPeak,   // نرخ تعرفه صنعتی — فقط نمایش
+                    TariffMidRial       = tariffMid,     // نرخ تعرفه صنعتی میان‌بار
+                    TariffLowRial       = displayLow,    // نرخ تعرفه صنعتی — فقط نمایش
                     MaxWholePeak        = maxWholePeak,
                     MaxWholeMid         = maxWholeMid,
                     MaxWholeLow         = maxWholeLow,
@@ -535,10 +558,10 @@ namespace MatinPower.Server.Controllers.Customer
                     RemainingLow        = remainingLow,
                     EnergyBeforeRial    = energyBefore,
                     Article16BeforeRial = article16Before,
-                    RegulatoryBeforeRial= regulatoryBefore,
+                    RegulatoryBeforeRial= 0m,
                     EnergyAfterRial     = energyAfter,
                     Article16AfterRial  = article16After,
-                    RegulatoryAfterRial = regulatoryAfter,
+                    RegulatoryAfterRial = 0m,
                     CreditRial          = totalCredit,
                     BilateralBillRial   = bilateralBill,
                     ExchangeBillRial    = exchangeBill,
@@ -547,6 +570,543 @@ namespace MatinPower.Server.Controllers.Customer
                     CostWithMatin       = costWithMatin,
                     NetSaving           = netSaving,
                     SavingPercent       = savingPercent,
+                };
+            });
+        }
+
+        // ─── Advanced Optimal Purchase Curve (Exchange sweep) ────────────────
+        // محور X: خرید از بورس برق (kWh)، از صفر تا کل مصرف
+        // هزینه‌ها از همان مدل AdvancedAnalysis محاسبه می‌شوند (نه مدل قراردادی)
+
+        [HttpPost]
+        [Route("[controller]/AdvancedOptimalPurchaseCurve")]
+        public ExecutionResult AdvancedOptimalPurchaseCurve([FromBody] AdvancedBillAnalysisRequest req)
+        {
+            if (req.Month < 1 || req.Month > 12)
+                return new ExecutionResult(ResultType.Danger, "خطای ورود", "ماه باید بین ۱ تا ۱۲ باشد.", 400);
+
+            var subscription = Repository<Subscription>.GetLast(i => i.Id == req.SubscriptionId);
+            if (subscription == null)
+                return new ExecutionResult(ResultType.Danger, "خطا", "اشتراک یافت نشد.", 404);
+
+            var marketRate = Repository<MonthlyMarketRate>.GetLast(i =>
+                i.Year == req.Year && i.Month == req.Month);
+            if (marketRate == null)
+                return new ExecutionResult(ResultType.Danger, "خطا",
+                    $"نرخ بازار برای {JalaliMonths[req.Month]} {req.Year} ثبت نشده است.", 404);
+
+            var address         = Repository<Address>.GetLast(i => i.Id == subscription.AddressId);
+            var customerProfile = address != null
+                ? Repository<CustomerProfile>.GetLast(i => i.Id == address.CustomerProfileId)
+                : null;
+
+            if (customerProfile?.TariffCodeOptionId == null)
+                return new ExecutionResult(ResultType.Danger, "خطا",
+                    "تعرفه مشتری تنظیم نشده است.", 400);
+
+            int optionId     = customerProfile.TariffCodeOptionId.Value;
+            var tariffOption = Repository<TariffCodeOption>.GetLast(i => i.Id == optionId);
+            var tariffCode   = tariffOption != null
+                ? Repository<TariffCode>.GetLast(i => i.Id == tariffOption.TariffCodeId)
+                : null;
+            var tariffRate   = Repository<TariffCodeOptionRate>.GetLast(i =>
+                i.TariffCodeOptionId == optionId && i.Year == req.Year);
+            if (tariffRate == null)
+                return new ExecutionResult(ResultType.Danger, "خطا",
+                    $"نرخ تعرفه برای سال {req.Year} ثبت نشده است.", 404);
+
+            decimal penaltyMul = tariffOption?.PenaltyMultiplier ?? CalculationConstants.DefaultPenaltyMultiplier;
+            decimal creditMul  = tariffOption?.CreditMultiplier  ?? CalculationConstants.DefaultCreditMultiplier;
+            bool isType4B      = tariffCode?.Code?.Contains("ب") == true && tariffCode.Code.Contains("4");
+
+            int powerEntityId = address?.PowerEntityId ?? 0;
+            var (peakH, midH, lowH, touFound) = GetTouHours(req.Month, powerEntityId);
+            if (!touFound)
+                return new ExecutionResult(ResultType.Danger, "خطا",
+                    "برنامه ساعات TOU برای این ماه تعریف نشده است. ابتدا جدول ساعات را از پنل مدیریت تنظیم کنید.", 400);
+
+            return RunExceptionProof(() =>
+            {
+                // ── مصرف (همان منطق AdvancedAnalysis) ────────────────────
+                decimal touTotal  = (decimal)(peakH + midH + lowH);
+                decimal peakRatio = (decimal)peakH / touTotal;
+                decimal midRatio  = (decimal)midH  / touTotal;
+                decimal lowRatio  = (decimal)lowH  / touTotal;
+
+                decimal peakKwh, midKwh, lowKwh;
+                if (req.ConsumptionMode == "total" && req.TotalKwh.HasValue)
+                {
+                    decimal total = req.TotalKwh.Value;
+                    peakKwh = total * peakRatio;
+                    midKwh  = total * midRatio;
+                    lowKwh  = total * lowRatio;
+                }
+                else
+                {
+                    peakKwh = req.PeakKwh ?? 0;
+                    midKwh  = req.MidKwh  ?? 0;
+                    lowKwh  = req.LowKwh  ?? 0;
+                }
+                decimal totalKwh = peakKwh + midKwh + lowKwh;
+
+                // ── نرخ‌ها ────────────────────────────────────────────────
+                // tariffMid = نرخ پشتیبانی میان‌بار — فقط برای ماده ۱۶
+                decimal tariffMid    = tariffRate.RateRialPerKwh;
+                decimal mktPeak      = marketRate.MarketPeak ?? 0;
+                decimal mktMid       = marketRate.MarketMid  ?? 0;
+                decimal mktLow       = marketRate.MarketLow  ?? 0;
+                decimal avgMarket    = marketRate.MarketAvg  ?? 0;
+                decimal greenLawRate = marketRate.IndustrialTariffBase ?? 0;
+                decimal boardPeak    = marketRate.BoardPeak ?? 0;
+                decimal boardMid     = marketRate.BoardMid  ?? 0;
+                decimal boardLow     = marketRate.BoardLow  ?? 0;
+
+                // نرخ بهای انرژی شبکه = حداکثر نرخ بازار × ضریب جریمه
+                decimal gridRatePeak = mktPeak * penaltyMul;
+                decimal gridRateMid  = mktMid  * penaltyMul;
+                decimal gridRateLow  = mktLow  * penaltyMul;
+
+                // ── ثوابت ماده ۱۶ ─────────────────────────────────────────
+                decimal greenPercent    = GreenLawPercent(isType4B, req.ActualDemandKw, req.Year);
+                decimal greenSubjectKwh = totalKwh * greenPercent;
+                decimal greenDiff       = greenLawRate - tariffMid;
+                decimal article16Before = greenSubjectKwh * Math.Max(greenDiff, 0);
+
+                // ── ثابت: دوجانبه و سبز (مستقل از مقدار بورس) ──────────
+                decimal bilateralPeak = req.BilateralKwh * peakRatio;
+                decimal bilateralMid  = req.BilateralKwh * midRatio;
+                decimal bilateralLow  = req.BilateralKwh * lowRatio;
+                decimal greenPeak     = req.GreenLawKwh   * peakRatio;
+                decimal greenMid      = req.GreenLawKwh   * midRatio;
+                decimal greenLow      = req.GreenLawKwh   * lowRatio;
+
+                decimal bilateralBill = req.BilateralKwh * req.BilateralRate;
+                decimal greenBill     = req.GreenLawKwh  * req.GreenRate;
+
+                decimal article16AfterFixed = Math.Max((greenSubjectKwh - req.GreenLawKwh) * greenDiff, 0);
+
+                // ── هزینه بدون قرارداد (کل مصرف از شبکه) ───────────────
+                decimal energyBefore     = peakKwh * gridRatePeak + midKwh * gridRateMid + lowKwh * gridRateLow;
+                decimal costWithoutMatin = energyBefore + article16Before;
+
+                // ── تابع هزینه برای هر مقدار خرید بورس ─────────────────────
+                decimal ComputeCostWithMatin(decimal exchKwh)
+                {
+                    decimal ePeak = exchKwh * peakRatio;
+                    decimal eMid  = exchKwh * midRatio;
+                    decimal eLow  = exchKwh * lowRatio;
+
+                    decimal mktEnergyPeak = bilateralPeak + ePeak + greenPeak;
+                    decimal mktEnergyMid  = bilateralMid  + eMid  + greenMid;
+                    decimal mktEnergyLow  = bilateralLow  + eLow  + greenLow;
+
+                    decimal remainingPeak = Math.Max(0, peakKwh - mktEnergyPeak);
+                    decimal remainingMid  = Math.Max(0, midKwh  - mktEnergyMid);
+                    decimal remainingLow  = Math.Max(0, lowKwh  - mktEnergyLow);
+
+                    decimal energyAfter =
+                        remainingPeak * gridRatePeak +
+                        remainingMid  * gridRateMid  +
+                        remainingLow  * gridRateLow;
+
+                    decimal creditP = Math.Min((peakKwh - mktEnergyPeak) * boardPeak * creditMul, 0);
+                    decimal creditM = Math.Min((midKwh  - mktEnergyMid)  * boardMid  * creditMul, 0);
+                    decimal creditL = Math.Min((lowKwh  - mktEnergyLow)  * boardLow  * creditMul, 0);
+
+                    return energyAfter + article16AfterFixed
+                         + creditP + creditM + creditL
+                         + bilateralBill + (exchKwh * req.ExchangeRate) + greenBill;
+                }
+
+                // ── پیمایش ۳۰ نقطه از ۰ تا totalKwh ─────────────────────
+                int steps = 30;
+                var points = new List<OptimalPurchaseCurvePoint>(steps + 1);
+                decimal bestSaving      = decimal.MinValue;
+                decimal bestExchangeKwh = req.ExchangeKwh;
+
+                for (int i = 0; i <= steps; i++)
+                {
+                    decimal exchKwh      = totalKwh * i / steps;
+                    decimal costWithMatin = ComputeCostWithMatin(exchKwh);
+                    decimal saving        = costWithoutMatin - costWithMatin;
+
+                    points.Add(new OptimalPurchaseCurvePoint
+                    {
+                        ContractCapacityKw  = exchKwh,
+                        ContractedEnergyKwh = exchKwh + req.BilateralKwh + req.GreenLawKwh,
+                        SavingRial          = saving,
+                        WithMatinBillRial   = costWithMatin,
+                    });
+
+                    if (saving > bestSaving) { bestSaving = saving; bestExchangeKwh = exchKwh; }
+                }
+
+                decimal savingAtCurrent = costWithoutMatin - ComputeCostWithMatin(req.ExchangeKwh);
+
+                return (object)new OptimalPurchaseCurveResult
+                {
+                    CurrentContractCapacityKw   = req.ExchangeKwh,
+                    SavingAtCurrentContractRial  = savingAtCurrent,
+                    OptimalContractCapacityKw    = bestExchangeKwh,
+                    OptimalSavingRial            = bestSaving,
+                    WithoutMatinBillRial         = costWithoutMatin,
+                    Points                       = points,
+                };
+            });
+        }
+
+        // ─── Greedy Recommendation Engine ────────────────────────────────────
+        // پیشنهاد بهینه خرید انرژی — نسخه MVP (Greedy, Phase 3A)
+        // ورودی: همان AdvancedBillAnalysisRequest — خروجی: OptimizationResult با reasoning
+
+        [HttpPost]
+        [Route("[controller]/GetRecommendation")]
+        public ExecutionResult GetRecommendation([FromBody] AdvancedBillAnalysisRequest req)
+        {
+            if (req.Month < 1 || req.Month > 12)
+                return new ExecutionResult(ResultType.Danger, "خطای ورود", "ماه باید بین ۱ تا ۱۲ باشد.", 400);
+
+            var subscription = Repository<Subscription>.GetLast(i => i.Id == req.SubscriptionId);
+            if (subscription == null)
+                return new ExecutionResult(ResultType.Danger, "خطا", "اشتراک یافت نشد.", 404);
+
+            var marketRate = Repository<MonthlyMarketRate>.GetLast(i =>
+                i.Year == req.Year && i.Month == req.Month);
+            if (marketRate == null)
+                return new ExecutionResult(ResultType.Danger, "خطا",
+                    $"نرخ بازار برای {JalaliMonths[req.Month]} {req.Year} ثبت نشده است.", 404);
+
+            var address         = Repository<Address>.GetLast(i => i.Id == subscription.AddressId);
+            var customerProfile = address != null
+                ? Repository<CustomerProfile>.GetLast(i => i.Id == address.CustomerProfileId)
+                : null;
+
+            if (customerProfile?.TariffCodeOptionId == null)
+                return new ExecutionResult(ResultType.Danger, "خطا",
+                    "تعرفه مشتری تنظیم نشده است.", 400);
+
+            int optionId     = customerProfile.TariffCodeOptionId.Value;
+            var tariffOption = Repository<TariffCodeOption>.GetLast(i => i.Id == optionId);
+            var tariffCode   = tariffOption != null
+                ? Repository<TariffCode>.GetLast(i => i.Id == tariffOption.TariffCodeId)
+                : null;
+            var tariffRate   = Repository<TariffCodeOptionRate>.GetLast(i =>
+                i.TariffCodeOptionId == optionId && i.Year == req.Year);
+            if (tariffRate == null)
+                return new ExecutionResult(ResultType.Danger, "خطا",
+                    $"نرخ تعرفه برای سال {req.Year} ثبت نشده است.", 404);
+
+            decimal penaltyMul = tariffOption?.PenaltyMultiplier ?? CalculationConstants.DefaultPenaltyMultiplier;
+            bool isType4B      = tariffCode?.Code?.Contains("ب") == true && tariffCode.Code.Contains("4");
+
+            int powerEntityId = address?.PowerEntityId ?? 0;
+            var (peakH, midH, lowH, touFound) = GetTouHours(req.Month, powerEntityId);
+            if (!touFound)
+                return new ExecutionResult(ResultType.Danger, "خطا",
+                    "برنامه ساعات TOU برای این ماه تعریف نشده است. ابتدا جدول ساعات را از پنل مدیریت تنظیم کنید.", 400);
+
+            return RunExceptionProof(() =>
+            {
+                // ── مصرف (همان منطق AdvancedAnalysis) ────────────────────
+                decimal touTotal  = (decimal)(peakH + midH + lowH);
+                decimal peakRatio = (decimal)peakH / touTotal;
+                decimal midRatio  = (decimal)midH  / touTotal;
+                decimal lowRatio  = (decimal)lowH  / touTotal;
+
+                decimal peakKwh, midKwh, lowKwh;
+                if (req.ConsumptionMode == "total" && req.TotalKwh.HasValue)
+                {
+                    decimal total = req.TotalKwh.Value;
+                    peakKwh = total * peakRatio;
+                    midKwh  = total * midRatio;
+                    lowKwh  = total * lowRatio;
+                }
+                else
+                {
+                    peakKwh = req.PeakKwh ?? 0;
+                    midKwh  = req.MidKwh  ?? 0;
+                    lowKwh  = req.LowKwh  ?? 0;
+                }
+                decimal totalKwh = peakKwh + midKwh + lowKwh;
+
+                // ── نرخ‌های مرجع ──────────────────────────────────────────
+                decimal tariffMid    = tariffRate.RateRialPerKwh;
+                decimal mktPeak      = marketRate.MarketPeak          ?? 0;
+                decimal mktMid       = marketRate.MarketMid           ?? 0;
+                decimal mktLow       = marketRate.MarketLow           ?? 0;
+                decimal greenLawRate = marketRate.IndustrialTariffBase ?? 0;
+
+                // ── ساخت input برای استراتژی ─────────────────────────────
+                decimal greenPercent    = GreenLawPercent(isType4B, req.ActualDemandKw, req.Year);
+                decimal greenSubjectKwh = totalKwh * greenPercent;
+
+                var input = new EnergyOptimizationInput
+                {
+                    TotalKwh              = totalKwh,
+                    PeakKwh               = peakKwh,
+                    MidKwh                = midKwh,
+                    LowKwh                = lowKwh,
+                    PeakRatio             = peakRatio,
+                    MidRatio              = midRatio,
+                    LowRatio              = lowRatio,
+                    GreenSubjectKwh       = greenSubjectKwh,
+                    ExchangePrice         = req.ExchangeRate,
+                    GreenPrice            = req.GreenRate,
+                    BilateralPrice        = req.BilateralRate,
+                    EffectiveGridRatePeak = penaltyMul * mktPeak,
+                    EffectiveGridRateMid  = penaltyMul * mktMid,
+                    EffectiveGridRateLow  = penaltyMul * mktLow,
+                    GreenLawRate          = greenLawRate,
+                    TariffMidRate         = tariffMid,
+                    ExchangeMarketCapacity = null,  // بدون سقف برای MVP
+                };
+
+                IOptimizationStrategy strategy = new GreedyOptimizationStrategy();
+                var result = strategy.Optimize(input);
+                return (object)result;
+            });
+        }
+
+        // ─── GetOptimalPortfolio ──────────────────────────────────────────────
+        // موتور بهینه‌سازی سبد انرژی — Phase 3B (Constrained LP)
+        //
+        // الگوریتم: Fractional Knapsack — بهینه اثبات‌شده برای LP با objective جدا‌پذیر
+        //   1. WT = میانگین وزنی تعرفه (نرخ موثر شبکه per kWh)
+        //   2. مزیت هر کانال = WT (+ A16 برای سبز اول) − نرخ کانال
+        //   3. پر کردن greedy از بالاترین مزیت تا تمام شدن بودجه بازار
+        //   4. شبکه = باقیمانده ≥ رزرو عملیاتی
+
+        [HttpPost]
+        [Route("[controller]/GetOptimalPortfolio")]
+        public ExecutionResult GetOptimalPortfolio([FromBody] PortfolioOptimizationRequest req)
+        {
+            if (req.Month < 1 || req.Month > 12)
+                return new ExecutionResult(ResultType.Danger, "خطای ورود", "ماه باید بین ۱ تا ۱۲ باشد.", 400);
+
+            var subscription = Repository<Subscription>.GetLast(i => i.Id == req.SubscriptionId);
+            if (subscription == null)
+                return new ExecutionResult(ResultType.Danger, "خطا", "شناسه یافت نشد.", 404);
+
+            var marketRate = Repository<MonthlyMarketRate>.GetLast(i =>
+                i.Year == req.Year && i.Month == req.Month);
+            if (marketRate == null)
+                return new ExecutionResult(ResultType.Danger, "خطا",
+                    $"نرخ بازار برای {JalaliMonths[req.Month]} {req.Year} ثبت نشده است.", 404);
+
+            var address         = Repository<Address>.GetLast(i => i.Id == subscription.AddressId);
+            var customerProfile = address != null
+                ? Repository<CustomerProfile>.GetLast(i => i.Id == address.CustomerProfileId)
+                : null;
+
+            if (customerProfile?.TariffCodeOptionId == null)
+                return new ExecutionResult(ResultType.Danger, "خطا",
+                    "تعرفه مشتری تنظیم نشده است. ابتدا از پروفایل تعرفه انتخاب کنید.", 400);
+
+            int optionId     = customerProfile.TariffCodeOptionId.Value;
+            var tariffOption = Repository<TariffCodeOption>.GetLast(i => i.Id == optionId);
+            var tariffCode   = tariffOption != null
+                ? Repository<TariffCode>.GetLast(i => i.Id == tariffOption.TariffCodeId)
+                : null;
+            var tariffRate   = Repository<TariffCodeOptionRate>.GetLast(i =>
+                i.TariffCodeOptionId == optionId && i.Year == req.Year);
+            if (tariffRate == null)
+                return new ExecutionResult(ResultType.Danger, "خطا",
+                    $"نرخ تعرفه برای سال {req.Year} ثبت نشده است.", 404);
+
+            bool isType4B = tariffCode?.Code?.Contains("ب") == true && tariffCode.Code.Contains("4");
+
+            int powerEntityId = address?.PowerEntityId ?? 0;
+            var (peakH, midH, lowH, touFound) = GetTouHours(req.Month, powerEntityId);
+            if (!touFound)
+                return new ExecutionResult(ResultType.Danger, "خطا",
+                    "برنامه ساعات TOU برای این ماه تعریف نشده است.", 400);
+
+            return RunExceptionProof(() =>
+            {
+                // ── مصرف ────────────────────────────────────────────────────
+                decimal touTotal  = (decimal)(peakH + midH + lowH);
+                decimal peakRatio = (decimal)peakH / touTotal;
+                decimal midRatio  = (decimal)midH  / touTotal;
+                decimal lowRatio  = (decimal)lowH  / touTotal;
+
+                decimal peakKwh, midKwh, lowKwh;
+                if (req.ConsumptionMode == "total" && req.TotalKwh.HasValue)
+                {
+                    peakKwh = req.TotalKwh.Value * peakRatio;
+                    midKwh  = req.TotalKwh.Value * midRatio;
+                    lowKwh  = req.TotalKwh.Value * lowRatio;
+                }
+                else
+                {
+                    peakKwh = req.PeakKwh ?? 0m;
+                    midKwh  = req.MidKwh  ?? 0m;
+                    lowKwh  = req.LowKwh  ?? 0m;
+                }
+                decimal totalKwh = peakKwh + midKwh + lowKwh;
+
+                if (totalKwh <= 0m)
+                    return (object)new { error = "مصرف کل صفر است" };
+
+                // ── تعرفه — فقط برای ماده ۱۶ ──────────────────────────────────
+                decimal tariffMid  = tariffRate.RateRialPerKwh;
+                decimal penaltyMulP = tariffOption?.PenaltyMultiplier ?? CalculationConstants.DefaultPenaltyMultiplier;
+
+                // ── نرخ‌های بازار ─────────────────────────────────────────────
+                decimal mktPeakP = marketRate.MarketPeak ?? 0m;
+                decimal mktMidP  = marketRate.MarketMid  ?? 0m;
+                decimal mktLowP  = marketRate.MarketLow  ?? 0m;
+
+                // نرخ بهای انرژی شبکه = حداکثر نرخ بازار × ضریب جریمه
+                decimal gridRatePeakP = mktPeakP * penaltyMulP;
+                decimal gridRateMidP  = mktMidP  * penaltyMulP;
+                decimal gridRateLowP  = mktLowP  * penaltyMulP;
+
+                // ── ماده ۱۶ ──────────────────────────────────────────────────
+                decimal greenPercent    = GreenLawPercent(isType4B, req.ActualDemandKw, req.Year);
+                decimal greenSubjectKwh = totalKwh * greenPercent;
+                decimal greenLawRate    = marketRate.IndustrialTariffBase ?? 0m;
+
+                // ── محدودیت‌ها: صفر = نامحدود تا totalKwh ────────────────────
+                decimal maxExchange  = req.MaxExchangeKwh       > 0m ? req.MaxExchangeKwh        : totalKwh;
+                decimal greenAvail   = req.GreenAvailabilityKwh > 0m ? req.GreenAvailabilityKwh  : greenSubjectKwh;
+                decimal maxBilateral = req.MaxBilateralKwh      > 0m ? req.MaxBilateralKwh       : totalKwh;
+
+                // ── ساخت input ────────────────────────────────────────────────
+                var inp = new PortfolioOptimizationInput
+                {
+                    TotalKwh = totalKwh,
+                    PeakKwh  = peakKwh,
+                    MidKwh   = midKwh,
+                    LowKwh   = lowKwh,
+
+                    PeakRatio = peakRatio,
+                    MidRatio  = midRatio,
+                    LowRatio  = lowRatio,
+
+                    TariffPeak = gridRatePeakP,
+                    TariffMid  = gridRateMidP,
+                    TariffLow  = gridRateLowP,
+
+                    ExchangeRate  = req.ExchangeRate,
+                    GreenRate     = req.GreenRate,
+                    BilateralRate = req.BilateralRate,
+
+                    GreenSubjectKwh      = greenSubjectKwh,
+                    GreenLawRate         = greenLawRate,
+
+                    MaxExchangeKwh        = maxExchange,
+                    GreenAvailabilityKwh  = greenAvail,
+                    MaxBilateralKwh       = maxBilateral,
+                    OperationalReserveKwh = req.OperationalReserveKwh,
+                };
+
+                // ── اجرای solver ──────────────────────────────────────────────
+                var solverOut = PortfolioSolver.Solve(inp);
+                if (!solverOut.IsFeasible)
+                    return (object)new { error = solverOut.InfeasibleReason };
+
+                var alloc    = solverOut.Allocation!;
+                var cost     = CostEvaluator.Evaluate(inp, alloc);
+                var baseline = CostEvaluator.Baseline(inp);
+
+                decimal WT  = solverOut.WeightedTariff;
+                decimal A16 = solverOut.Article16Benefit;
+
+                // ── Explainability ────────────────────────────────────────────
+                var reasoning = new List<ChannelDecision>
+                {
+                    new()
+                    {
+                        Channel        = "exchange",
+                        ChannelName    = "بورس برق",
+                        IsActive       = alloc.ExchangeKwh > 0m,
+                        KwhAllocated   = alloc.ExchangeKwh,
+                        CostRial       = cost.ExchangeBill,
+                        ChannelRate    = req.ExchangeRate,
+                        GridSavingRate = WT,
+                        Message        = alloc.ExchangeKwh > 0m
+                            ? $"بورس ({req.ExchangeRate:N0} ریال/kWh) ارزان‌تر از شبکه ({WT:N0} ریال/kWh) — {alloc.ExchangeKwh:N0} kWh خریداری شد"
+                            : req.ExchangeRate <= 0m
+                                ? "نرخ بورس وارد نشده است"
+                                : $"بورس ({req.ExchangeRate:N0} ریال/kWh) گران‌تر از شبکه ({WT:N0} ریال/kWh) — خرید توصیه نمی‌شود",
+                    },
+                    new()
+                    {
+                        Channel        = "green",
+                        ChannelName    = "برق سبز",
+                        IsActive       = alloc.GreenKwh > 0m,
+                        KwhAllocated   = alloc.GreenKwh,
+                        CostRial       = cost.GreenBill,
+                        ChannelRate    = req.GreenRate,
+                        GridSavingRate = WT + A16,
+                        Message        = alloc.GreenKwh > 0m
+                            ? $"برق سبز ({req.GreenRate:N0} ریال/kWh): {alloc.GreenKwh:N0} kWh — "
+                              + (greenSubjectKwh > 0m
+                                  ? $"جریمه ماده ۱۶ ({A16:N0} ریال/kWh صرفه) حذف شد"
+                                  : "ارزان‌تر از شبکه")
+                            : greenSubjectKwh <= 0m
+                                ? "مشمول ماده ۱۶ نیست"
+                                : $"برق سبز ({req.GreenRate:N0} ریال/kWh) گران‌تر از صرفه ({WT + A16:N0} ریال/kWh) — خرید توصیه نمی‌شود",
+                    },
+                    new()
+                    {
+                        Channel        = "bilateral",
+                        ChannelName    = "قرارداد دوجانبه",
+                        IsActive       = alloc.BilateralKwh > 0m,
+                        KwhAllocated   = alloc.BilateralKwh,
+                        CostRial       = cost.BilateralBill,
+                        ChannelRate    = req.BilateralRate,
+                        GridSavingRate = WT,
+                        Message        = alloc.BilateralKwh > 0m
+                            ? $"دوجانبه ({req.BilateralRate:N0} ریال/kWh): {alloc.BilateralKwh:N0} kWh — ارزان‌تر از شبکه"
+                            : req.BilateralRate <= 0m
+                                ? "نرخ دوجانبه وارد نشده است"
+                                : $"دوجانبه ({req.BilateralRate:N0} ریال/kWh) گران‌تر از شبکه ({WT:N0} ریال/kWh) — خرید توصیه نمی‌شود",
+                    },
+                    new()
+                    {
+                        Channel      = "grid",
+                        ChannelName  = "شبکه توزیع",
+                        IsActive     = true,
+                        KwhAllocated = alloc.GridKwh,
+                        CostRial     = cost.EnergyAfter,
+                        ChannelRate  = WT,
+                        Message      = alloc.GridKwh <= req.OperationalReserveKwh + 0.5m && req.OperationalReserveKwh > 0m
+                            ? $"شبکه ({alloc.GridKwh:N0} kWh): رزرو عملیاتی حفظ شد"
+                            : $"شبکه ({alloc.GridKwh:N0} kWh): باقیمانده از شبکه تامین می‌شود",
+                    },
+                };
+
+                return (object)new PortfolioOptimizationResult
+                {
+                    OptimalMix = new OptimalMix
+                    {
+                        ExchangeKwh   = alloc.ExchangeKwh,
+                        GreenKwh      = alloc.GreenKwh,
+                        BilateralKwh  = alloc.BilateralKwh,
+                        GridKwh       = alloc.GridKwh,
+                        ExchangeCost  = cost.ExchangeBill,
+                        GreenCost     = cost.GreenBill,
+                        BilateralCost = cost.BilateralBill,
+                        GridCost      = cost.EnergyAfter,
+                    },
+                    TotalCost        = cost.CostWith,
+                    BaselineCost     = baseline.CostWithout,
+                    Saving           = baseline.CostWithout - cost.CostWith,
+                    SavingPercent    = baseline.CostWithout > 0m
+                        ? Math.Round((baseline.CostWithout - cost.CostWith) / baseline.CostWithout * 100m, 2)
+                        : 0m,
+                    ResidualGridCost = cost.EnergyAfter,
+                    ExchangeBill     = cost.ExchangeBill,
+                    GreenBill        = cost.GreenBill,
+                    BilateralBill    = cost.BilateralBill,
+                    Article16After   = cost.Article16After,
+                    Article16Saved   = baseline.Article16Before - cost.Article16After,
+                    WeightedGridTariff = WT,
+                    Article16Benefit   = A16,
+                    ConstraintHits   = solverOut.ConstraintHits,
+                    Reasoning        = reasoning,
+                    SolverTrace      = solverOut.Steps,
                 };
             });
         }

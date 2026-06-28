@@ -12,4 +12,22 @@ namespace MatinPower.Server.Models.Body
         public string Role { get; set; } = null!;
         public string FullName { get; set; } = null!;
     }
+
+    public class ForgotSendOtpRequest
+    {
+        public string Mobile { get; set; } = null!;
+    }
+
+    public class ForgotVerifyOtpRequest
+    {
+        public string Mobile { get; set; } = null!;
+        public string Code { get; set; } = null!;
+    }
+
+    public class ForgotResetPasswordRequest
+    {
+        public string Mobile { get; set; } = null!;
+        public string Code { get; set; } = null!;
+        public string NewPassword { get; set; } = null!;
+    }
 }

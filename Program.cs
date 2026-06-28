@@ -50,6 +50,10 @@ try
     builder.Services.AddDbContext<MatinPower.Server.Models.FileStorage.FileDbContext>(options =>
         options.UseSqlServer(configuration.GetConnectionString("FileDbConnection")));
 
+    // Log database — read-only access to MatinPower_Log for dashboard
+    builder.Services.AddDbContext<MatinPower.Server.Models.Log.LogDbContext>(options =>
+        options.UseSqlServer(configuration.GetConnectionString("LogDbConnection")));
+
     // Allow multipart upload up to 50 MB
     builder.Services.Configure<Microsoft.AspNetCore.Http.Features.FormOptions>(o =>
     {

@@ -95,9 +95,13 @@ namespace MatinPower.Server.Models.Body
         public decimal GreenLawKwh   { get; set; }   // قانون جهش تولید (kWh)
         public decimal GreenRate     { get; set; }   // نرخ برق سبز (ریال/kWh)
 
-        // نرخ شخصی مشتری (اختیاری — اگر وارد نشود از تعرفه استفاده می‌شود)
-        public bool    UseCustomRate   { get; set; } = false;
-        public string? RateType        { get; set; } = "single";  // "single" | "split"
+        // ── [RESERVED — Phase 3: Simulation / What-If / Custom Negotiation] ──
+        // UseCustomRate و فیلدهای زیر در AdvancedAnalysis فعلاً استفاده نمی‌شوند.
+        // در Phase 3 برای سناریوهای "اگر نرخ قرارداد X بود چقدر صرفه‌جویی داشتیم؟"
+        // یا مذاکره تعرفه شخصی‌سازی‌شده استفاده خواهند شد.
+        // تغییر ندهید بدون به‌روزرسانی IOptimizationStrategy input model.
+        public bool     UseCustomRate  { get; set; } = false;
+        public string?  RateType       { get; set; } = "single";  // "single" | "split"
         public decimal? SingleRateRial { get; set; }
         public decimal? PeakRateRial   { get; set; }
         public decimal? MidRateRial    { get; set; }
@@ -172,6 +176,47 @@ namespace MatinPower.Server.Models.Body
         public decimal CostWithMatin    { get; set; }
         public decimal NetSaving        { get; set; }
         public decimal SavingPercent    { get; set; }
+    }
+
+    // ─── Portfolio Optimization Request ──────────────────────────────────────
+
+    /// <summary>
+    /// Request body for GetOptimalPortfolio endpoint.
+    /// Specifies consumption, market prices, and hard constraints.
+    /// The solver finds the minimum-cost mix of (Exchange, Green, Bilateral, Grid).
+    /// </summary>
+    public class PortfolioOptimizationRequest
+    {
+        public int SubscriptionId { get; set; }
+        public int Year  { get; set; }
+        public int Month { get; set; }
+
+        // ── Consumption — same semantics as AdvancedBillAnalysisRequest ──────
+        public string   ConsumptionMode { get; set; } = "split";
+        public decimal? TotalKwh        { get; set; }
+        public decimal? PeakKwh         { get; set; }
+        public decimal? MidKwh          { get; set; }
+        public decimal? LowKwh          { get; set; }
+
+        // ── Demand ───────────────────────────────────────────────────────────
+        public decimal ActualDemandKw { get; set; }
+
+        // ── Market prices (ریال/kWh) — what we'd pay per channel ─────────────
+        public decimal ExchangeRate  { get; set; }
+        public decimal GreenRate     { get; set; }
+        public decimal BilateralRate { get; set; }
+
+        // ── Constraints: capacity limits per channel (kWh) ───────────────────
+        /// Maximum kWh available from exchange (0 = unconstrained up to TotalKwh)
+        public decimal MaxExchangeKwh       { get; set; } = 0m;
+        /// Maximum green energy purchasable in market (0 = GreenSubjectKwh as cap)
+        public decimal GreenAvailabilityKwh { get; set; } = 0m;
+        /// Maximum bilateral contract volume available (0 = unconstrained)
+        public decimal MaxBilateralKwh      { get; set; } = 0m;
+
+        /// Minimum kWh that must stay on grid (operational/reliability reserve).
+        /// Example: 0.1 × TotalKwh = 10% reserve.
+        public decimal OperationalReserveKwh { get; set; } = 0m;
     }
 
     public class SubscriptionRateRequest

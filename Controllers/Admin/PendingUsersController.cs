@@ -1,5 +1,7 @@
 using MatinPower.Infrastructure;
 using MatinPower.Server.Models;
+using MatinPower.Server.Services;
+using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
 using TicketManagement.Infrastructure;
 
@@ -38,11 +40,11 @@ namespace MatinPower.Server.Controllers.Admin
                             : null,
                         RegisteredAt = u.CustomerProfile != null
                             ? (u.CustomerProfile.CustomersReal != null
-                                ? u.CustomerProfile.CustomersReal.CreatedAt
+                                ? PersianDateConverter.ToPersianDate(u.CustomerProfile.CustomersReal.CreatedAt, "yyyy/MM/dd")
                                 : u.CustomerProfile.CustomersLegal != null
-                                    ? u.CustomerProfile.CustomersLegal.CreatedAt
-                                    : (DateTime?)null)
-                            : (DateTime?)null,
+                                    ? PersianDateConverter.ToPersianDate(u.CustomerProfile.CustomersLegal.CreatedAt, "yyyy/MM/dd")
+                                    : (string?)null)
+                            : (string?)null,
                         City = u.CustomerProfile != null
                             ? u.CustomerProfile.Addresses
                                 .OrderByDescending(a => a.Id)
@@ -78,7 +80,7 @@ namespace MatinPower.Server.Controllers.Admin
             if (user == null)
                 return new ExecutionResult(ResultType.Danger, "خطا", "کاربر یافت نشد.", 404);
 
-            return RunExceptionProof(() =>
+            var result = RunExceptionProof(() =>
             {
                 user.IsActive = true;
                 Repository<User>.UpdateItem(user);
@@ -93,6 +95,14 @@ namespace MatinPower.Server.Controllers.Admin
                     }
                 }
             });
+
+            if (result.Code == 200 && !string.IsNullOrEmpty(user.Mobile))
+            {
+                var smsMobile = user.Mobile.StartsWith("0") ? "+98" + user.Mobile.Substring(1) : user.Mobile;
+                _ = SmsService.SendAsync(smsMobile, "پروفایل شما در سامانه برق تایید شد. اکنون می‌توانید وارد شوید.");
+            }
+
+            return result;
         }
 
         [HttpDelete("Reject/{userId}")]

@@ -52,12 +52,5 @@ namespace MatinPower.Infrastructure.Filter
         }
 
     }
-    public class InternetAccessAttribute : Attribute, IAuthorizationFilter
-    {
-        public void OnAuthorization(AuthorizationFilterContext filterContext)
-        {
-            if (!Utilities.InternetAccessUsers())
-                throw new Exception("denaid");
-        }
-    }
+
 }

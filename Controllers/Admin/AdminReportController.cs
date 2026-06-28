@@ -44,13 +44,13 @@ namespace MatinPower.Server.Controllers.Admin
                         BillIdentifier = c.Subscription.BillIdentifier ?? "",
                         Status = c.Status.Title ?? "",
                         c.StatusId,
-                        StartDate = c.StartDate != null ? c.StartDate.Value.ToString("yyyy-MM-dd") : null,
-                        EndDate = c.EndDate != null ? c.EndDate.Value.ToString("yyyy-MM-dd") : null,
+                        StartDate = c.StartDate != null ? PersianDateConverter.ToPersianDate(c.StartDate.Value, "yyyy/MM/dd") : null,
+                        EndDate = c.EndDate != null ? PersianDateConverter.ToPersianDate(c.EndDate.Value, "yyyy/MM/dd") : null,
                         c.ContractRate,
                         c.ContractPowerKw,
                         c.ContractVolumeKwh,
                         c.ContractAmountRial,
-                        PaymentDeadline = c.PaymentDeadline != null ? c.PaymentDeadline.Value.ToString("yyyy-MM-dd") : null,
+                        PaymentDeadline = c.PaymentDeadline != null ? PersianDateConverter.ToPersianDate(c.PaymentDeadline.Value, "yyyy/MM/dd") : null,
                     })
                     .ToList();
 
@@ -124,7 +124,7 @@ namespace MatinPower.Server.Controllers.Admin
                         o.PriceAtMoment,
                         Status = o.Status.Title ?? "",
                         o.StatusId,
-                        OrderDate = o.OrderDate != null ? o.OrderDate.Value.ToString("yyyy-MM-dd") : null,
+                        OrderDate = o.OrderDate != null ? PersianDateConverter.ToPersianDate(o.OrderDate.Value, "yyyy/MM/dd") : null,
                         o.IsPriceRequest,
                         PaymentCount = o.Payments.Count,
                         PaidAmount = o.Payments.Where(p => p.StatusId == 2).Sum(p => (decimal?)p.Amount) ?? 0,
@@ -190,7 +190,7 @@ namespace MatinPower.Server.Controllers.Admin
                         p.StatusId,
                         p.ReferenceNumber,
                         ReceiptFileId = p.ReceiptFileId.HasValue ? p.ReceiptFileId.Value.ToString() : null,
-                        CreatedAt = p.CreatedAt != null ? p.CreatedAt.Value.ToString("yyyy-MM-dd") : null,
+                        CreatedAt = p.CreatedAt != null ? PersianDateConverter.ToPersianDate(p.CreatedAt.Value, "yyyy/MM/dd") : null,
                     })
                     .ToList();
 

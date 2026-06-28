@@ -26,10 +26,6 @@ namespace TicketManagement.Infrastructure
 
             logger.Error(ex, $"An exception occurred in the Utilities");
         }
-        public static bool InternetAccessUsers()
-        {
-            return GetValueFromConfiguration("InternetMode:InternetAccessMode").ChangeType<bool?>() ?? false;
-        }
         public static void ServiceCallLog(string serviceName, DataDictionary input, string result = null, Exception exception = null)
         {
             string exceptionData = string.Empty;
