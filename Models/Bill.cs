@@ -19,7 +19,7 @@ public partial class Bill
 
     public decimal? TotalAmount { get; set; }
 
-    public int TariffId { get; set; }
+    public int? TariffId { get; set; }
 
     public DateTime? CreatedAt { get; set; }
 

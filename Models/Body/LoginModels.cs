@@ -10,6 +10,8 @@ namespace MatinPower.Server.Models.Body
     {
         public string Token { get; set; } = null!;
         public string Role { get; set; } = null!;
+        public string? RoleTitle { get; set; }
+        public int? RoleId { get; set; }
         public string FullName { get; set; } = null!;
     }
 

@@ -24,4 +24,13 @@ namespace MatinPower.Server.Models
         public int TypeId { get; set; }
         public Guid? FileId { get; set; }
     }
+
+    public class CreateContractRequest
+    {
+        public int SubscriptionId { get; set; }
+        public decimal? ContractPowerKw { get; set; }
+        public decimal? ContractVolumeKwh { get; set; }
+        public DateTime? StartDate { get; set; }
+        public DateTime? EndDate { get; set; }
+    }
 }

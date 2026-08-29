@@ -130,5 +130,25 @@ namespace TicketManagement.Infrastructure
             }
             return null;
         }
+
+        public string? GetRoleTitle()
+        {
+            var userId = GetUserId();
+            if (!userId.HasValue) return null;
+            var userRole = Repository<UserRole>.GetLast(i => i.UserId == userId.Value);
+            return userRole?.Role?.Title;
+        }
+
+        public int? GetRoleId()
+        {
+            var userId = GetUserId();
+            if (!userId.HasValue) return null;
+            var userRole = Repository<UserRole>.GetLast(i => i.UserId == userId.Value);
+            return userRole?.RoleId;
+        }
+
+        // نقش «ادمین» = RoleId 5 در جدول Role (طبق تایید مستقیم کاربر روی دیتابیس) —
+        // عملیات حساس مثل حذف قرارداد/سفارش فقط برای این نقش مجاز است
+        public bool IsAdminRole() => GetRoleId() == 5;
     }
 }

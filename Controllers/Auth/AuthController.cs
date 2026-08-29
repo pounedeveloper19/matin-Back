@@ -46,6 +46,8 @@ namespace MatinPower.Server.Controllers.Auth
             {
                 Token = token,
                 Role = role,
+                RoleTitle = userRole?.Role?.Title,
+                RoleId = userRole?.RoleId,
                 FullName = user.FullName ?? user.Mobile,
             });
         }

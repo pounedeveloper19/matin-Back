@@ -43,6 +43,17 @@ namespace MatinPower.Server.Controllers.Customer
             int low  = schedule.Where(s => s.ToutypeId == lowTypeId) .Select(s => s.HourNumber).Distinct().Count();
 
             bool found = (peak + mid + low) > 0;
+
+            // اگر شرکت توزیع مشتری برای این ماه TOU نداشت، از هر شرکتی که برای همین ماه TOU ثبت کرده استفاده کن
+            if (!found && powerEntityId != 0)
+            {
+                var fallbackSchedule = Repository<Touschedule>.GetListExtended(i => i.MonthNumber == month);
+                peak = fallbackSchedule.Where(s => s.ToutypeId == peakTypeId).Select(s => s.HourNumber).Distinct().Count();
+                mid  = fallbackSchedule.Where(s => s.ToutypeId == midTypeId) .Select(s => s.HourNumber).Distinct().Count();
+                low  = fallbackSchedule.Where(s => s.ToutypeId == lowTypeId) .Select(s => s.HourNumber).Distinct().Count();
+                found = (peak + mid + low) > 0;
+            }
+
             if (!found)
             {
                 peak = CalculationConstants.DefaultPeakHoursPerDay;
@@ -52,6 +63,24 @@ namespace MatinPower.Server.Controllers.Customer
 
             return (peak, mid, low, found);
         }
+
+        private string TouMissingMessage(int month, int powerEntityId)
+        {
+            string companyName = powerEntityId > 0
+                ? Repository<PowerEntity>.GetLast(i => i.Id == powerEntityId)?.Name
+                : null;
+            string monthName = (month >= 1 && month <= 12) ? JalaliMonths[month] : month.ToString();
+
+            return string.IsNullOrEmpty(companyName)
+                ? $"برنامه ساعات TOU برای {monthName} تعریف نشده است. ابتدا جدول ساعات را از پنل مدیریت تنظیم کنید."
+                : $"برنامه ساعات TOU برای {monthName} در شرکت توزیع «{companyName}» (و هیچ شرکت دیگری) تعریف نشده است. ابتدا جدول ساعات را از پنل مدیریت تنظیم کنید.";
+        }
+
+        // تعرفه‌ی معتبر برای یک ماه/سال مشخص را برمی‌گرداند: اول از تاریخچه‌ی تعرفه (چون تعرفه
+        // مشتری ممکن است ماه به ماه عوض شده باشد)، و اگر تاریخچه‌ای ثبت نشده (مشتریان قدیمی)
+        // به مقدار زنده‌ی پروفایل برمی‌گردد
+        private int? ResolveTariffCodeOptionId(int customerProfileId, int year, int month) =>
+            TariffResolver.ResolveTariffCodeOptionId(customerProfileId, year, month);
 
         // ─── LEGACY: ManualAnalysis ───────────────────────────────────────────
         // Status: LEGACY — Feature Freeze. Bug-fix only. No new features.
@@ -354,11 +383,15 @@ namespace MatinPower.Server.Controllers.Customer
                 ? Repository<CustomerProfile>.GetLast(i => i.Id == address.CustomerProfileId)
                 : null;
 
-            if (customerProfile?.TariffCodeOptionId == null)
+            if (customerProfile == null)
+                return new ExecutionResult(ResultType.Danger, "خطا", "پروفایل مشتری یافت نشد.", 404);
+
+            var resolvedOptionId = ResolveTariffCodeOptionId(customerProfile.Id, req.Year, req.Month);
+            if (resolvedOptionId == null)
                 return new ExecutionResult(ResultType.Danger, "خطا",
                     "تعرفه مشتری تنظیم نشده است. ابتدا از پروفایل تعرفه انتخاب کنید.", 400);
 
-            int optionId      = customerProfile.TariffCodeOptionId.Value;
+            int optionId      = resolvedOptionId.Value;
             var tariffOption  = Repository<TariffCodeOption>.GetLast(i => i.Id == optionId);
             var tariffCode    = tariffOption != null
                 ? Repository<TariffCode>.GetLast(i => i.Id == tariffOption.TariffCodeId)
@@ -377,7 +410,7 @@ namespace MatinPower.Server.Controllers.Customer
             var (peakH, midH, lowH, touFound) = GetTouHours(req.Month, powerEntityId);
             if (!touFound)
                 return new ExecutionResult(ResultType.Danger, "خطا",
-                    "برنامه ساعات TOU برای این ماه تعریف نشده است. ابتدا جدول ساعات را از پنل مدیریت تنظیم کنید.", 400);
+                    TouMissingMessage(req.Month, powerEntityId), 400);
 
             return RunExceptionProof(() =>
             {
@@ -600,11 +633,14 @@ namespace MatinPower.Server.Controllers.Customer
                 ? Repository<CustomerProfile>.GetLast(i => i.Id == address.CustomerProfileId)
                 : null;
 
-            if (customerProfile?.TariffCodeOptionId == null)
-                return new ExecutionResult(ResultType.Danger, "خطا",
-                    "تعرفه مشتری تنظیم نشده است.", 400);
+            if (customerProfile == null)
+                return new ExecutionResult(ResultType.Danger, "خطا", "پروفایل مشتری یافت نشد.", 404);
 
-            int optionId     = customerProfile.TariffCodeOptionId.Value;
+            var resolvedOptionId = ResolveTariffCodeOptionId(customerProfile.Id, req.Year, req.Month);
+            if (resolvedOptionId == null)
+                return new ExecutionResult(ResultType.Danger, "خطا", "تعرفه مشتری تنظیم نشده است.", 400);
+
+            int optionId     = resolvedOptionId.Value;
             var tariffOption = Repository<TariffCodeOption>.GetLast(i => i.Id == optionId);
             var tariffCode   = tariffOption != null
                 ? Repository<TariffCode>.GetLast(i => i.Id == tariffOption.TariffCodeId)
@@ -623,7 +659,7 @@ namespace MatinPower.Server.Controllers.Customer
             var (peakH, midH, lowH, touFound) = GetTouHours(req.Month, powerEntityId);
             if (!touFound)
                 return new ExecutionResult(ResultType.Danger, "خطا",
-                    "برنامه ساعات TOU برای این ماه تعریف نشده است. ابتدا جدول ساعات را از پنل مدیریت تنظیم کنید.", 400);
+                    TouMissingMessage(req.Month, powerEntityId), 400);
 
             return RunExceptionProof(() =>
             {
@@ -781,11 +817,14 @@ namespace MatinPower.Server.Controllers.Customer
                 ? Repository<CustomerProfile>.GetLast(i => i.Id == address.CustomerProfileId)
                 : null;
 
-            if (customerProfile?.TariffCodeOptionId == null)
-                return new ExecutionResult(ResultType.Danger, "خطا",
-                    "تعرفه مشتری تنظیم نشده است.", 400);
+            if (customerProfile == null)
+                return new ExecutionResult(ResultType.Danger, "خطا", "پروفایل مشتری یافت نشد.", 404);
 
-            int optionId     = customerProfile.TariffCodeOptionId.Value;
+            var resolvedOptionId = ResolveTariffCodeOptionId(customerProfile.Id, req.Year, req.Month);
+            if (resolvedOptionId == null)
+                return new ExecutionResult(ResultType.Danger, "خطا", "تعرفه مشتری تنظیم نشده است.", 400);
+
+            int optionId     = resolvedOptionId.Value;
             var tariffOption = Repository<TariffCodeOption>.GetLast(i => i.Id == optionId);
             var tariffCode   = tariffOption != null
                 ? Repository<TariffCode>.GetLast(i => i.Id == tariffOption.TariffCodeId)
@@ -803,7 +842,7 @@ namespace MatinPower.Server.Controllers.Customer
             var (peakH, midH, lowH, touFound) = GetTouHours(req.Month, powerEntityId);
             if (!touFound)
                 return new ExecutionResult(ResultType.Danger, "خطا",
-                    "برنامه ساعات TOU برای این ماه تعریف نشده است. ابتدا جدول ساعات را از پنل مدیریت تنظیم کنید.", 400);
+                    TouMissingMessage(req.Month, powerEntityId), 400);
 
             return RunExceptionProof(() =>
             {
@@ -898,11 +937,15 @@ namespace MatinPower.Server.Controllers.Customer
                 ? Repository<CustomerProfile>.GetLast(i => i.Id == address.CustomerProfileId)
                 : null;
 
-            if (customerProfile?.TariffCodeOptionId == null)
+            if (customerProfile == null)
+                return new ExecutionResult(ResultType.Danger, "خطا", "پروفایل مشتری یافت نشد.", 404);
+
+            var resolvedOptionId = ResolveTariffCodeOptionId(customerProfile.Id, req.Year, req.Month);
+            if (resolvedOptionId == null)
                 return new ExecutionResult(ResultType.Danger, "خطا",
                     "تعرفه مشتری تنظیم نشده است. ابتدا از پروفایل تعرفه انتخاب کنید.", 400);
 
-            int optionId     = customerProfile.TariffCodeOptionId.Value;
+            int optionId     = resolvedOptionId.Value;
             var tariffOption = Repository<TariffCodeOption>.GetLast(i => i.Id == optionId);
             var tariffCode   = tariffOption != null
                 ? Repository<TariffCode>.GetLast(i => i.Id == tariffOption.TariffCodeId)
@@ -919,7 +962,7 @@ namespace MatinPower.Server.Controllers.Customer
             var (peakH, midH, lowH, touFound) = GetTouHours(req.Month, powerEntityId);
             if (!touFound)
                 return new ExecutionResult(ResultType.Danger, "خطا",
-                    "برنامه ساعات TOU برای این ماه تعریف نشده است.", 400);
+                    TouMissingMessage(req.Month, powerEntityId), 400);
 
             return RunExceptionProof(() =>
             {
@@ -1218,6 +1261,45 @@ namespace MatinPower.Server.Controllers.Customer
 
                 return (object)reports;
             });
+        }
+
+        // ─── GetHistoryAnalysis ─────────────────────────────────────────────────
+        // بازسازی تحلیل کامل قبض (برای خروجی PDF) از روی ورودی‌های ذخیره‌شده‌ی
+        // یک رکورد تاریخچه — همان مسیر محاسباتی AdvancedAnalysis با SaveReport=false.
+
+        [HttpGet]
+        [Route("[controller]/GetHistoryAnalysis/{reportId}")]
+        public ExecutionResult GetHistoryAnalysis(int reportId)
+        {
+            var report = Repository<BillAnalysisReport>.GetLast(i => i.Id == reportId);
+            if (report == null)
+                return new ExecutionResult(ResultType.Danger, "خطا", "گزارش یافت نشد.", 404);
+
+            if (report.Year == null || report.Month == null)
+                return new ExecutionResult(ResultType.Danger, "خطا",
+                    "این گزارش اطلاعات کافی برای بازسازی تحلیل کامل را ندارد.", 400);
+
+            var req = new AdvancedBillAnalysisRequest
+            {
+                SubscriptionId   = report.SubscriptionId,
+                Year             = report.Year.Value,
+                Month            = report.Month.Value,
+                ConsumptionMode  = "split",
+                PeakKwh          = report.PeakCons ?? 0,
+                MidKwh           = report.MidCons  ?? 0,
+                LowKwh           = report.LowCons  ?? 0,
+                ContractDemandKw = report.ContractDemandKw ?? 0,
+                ActualDemandKw   = report.ActualDemandKw   ?? 0,
+                BilateralKwh     = report.BilateralKwh ?? 0,
+                BilateralRate    = report.BilateralRate ?? 0,
+                ExchangeKwh      = report.ExchangeKwh ?? 0,
+                ExchangeRate     = report.ExchangeRate ?? 0,
+                GreenLawKwh      = report.GreenLawKwh ?? 0,
+                GreenRate        = report.GreenRate ?? 0,
+                SaveReport       = false,
+            };
+
+            return AdvancedAnalysis(req);
         }
     }
 }

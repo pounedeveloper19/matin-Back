@@ -20,8 +20,11 @@ namespace MatinPower.Server.Controllers.Auth
             _log = log;
         }
 
+        // در این بازه، درخواست مجدد کد به‌جای باطل‌کردن کد قبلی (که ممکن است پیامکش هنوز در راه باشد)، همان کد را دوباره ارسال می‌کند
+        private const int ResendCooldownSeconds = 60;
+
         [HttpPost]
-        public async Task<ExecutionResult> SendOtp([FromBody] ForgotSendOtpRequest request)
+        public ExecutionResult SendOtp([FromBody] ForgotSendOtpRequest request)
         {
             try
             {
@@ -45,16 +48,30 @@ namespace MatinPower.Server.Controllers.Auth
                     }
                 }
 
-                var code = new Random().Next(100000, 999999).ToString();
+                string code = null;
 
                 Repository<OtpCode>.ExecuteCommand(db =>
                 {
-                    // Invalidate previous unused OTPs for this mobile
+                    // اگر کد معتبر و استفاده‌نشده‌ی قبلی هنوز خیلی تازه است (احتمالاً پیامکش هنوز نرسیده)،
+                    // آن را باطل نمی‌کنیم و همان کد را دوباره ارسال می‌کنیم؛ همین رفتار جلوی خطای «کد اشتباه است»
+                    // برای پیامک‌های دیرکرد را می‌گیرد
+                    var recentValid = db.OtpCodes
+                        .Where(o => o.Mobile == request.Mobile && !o.IsUsed && o.ExpiresAt > DateTime.Now)
+                        .OrderByDescending(o => o.CreatedAt)
+                        .FirstOrDefault();
+
+                    if (recentValid != null && recentValid.CreatedAt.AddSeconds(ResendCooldownSeconds) > DateTime.Now)
+                    {
+                        code = recentValid.Code;
+                        return;
+                    }
+
                     var previous = db.OtpCodes
                         .Where(o => o.Mobile == request.Mobile && !o.IsUsed && o.ExpiresAt > DateTime.Now)
                         .ToList();
                     previous.ForEach(o => o.IsUsed = true);
 
+                    code = new Random().Next(100000, 999999).ToString();
                     db.OtpCodes.Add(new OtpCode
                     {
                         Mobile = request.Mobile,
@@ -67,7 +84,8 @@ namespace MatinPower.Server.Controllers.Auth
                 });
 
                 var smsTarget = targetMobile.StartsWith("0") ? "+98" + targetMobile.Substring(1) : targetMobile;
-                await SmsService.SendAsync(smsTarget, $"کد بازیابی رمز عبور سامانه متین پاور: {code}\nاین کد ۵ دقیقه اعتبار دارد.");
+                // پاسخ به کاربر منتظر جواب پنل پیامک نمی‌ماند؛ ارسال در پس‌زمینه انجام می‌شود تا درخواست بلافاصله برگردد
+                _ = SmsService.SendAsync(smsTarget, $"کد بازیابی رمز عبور سامانه متین پاور: {code}\nاین کد ۵ دقیقه اعتبار دارد.");
 
                 // \u200E = LTR mark, prevents RTL bidi from flipping the masked number
                 var masked = "\u200E" + new string('*', targetMobile.Length - 4) + targetMobile[^4..];

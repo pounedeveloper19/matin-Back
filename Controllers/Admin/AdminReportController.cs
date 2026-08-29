@@ -1,3 +1,4 @@
+using System.Globalization;
 using MatinPower.Infrastructure;
 using MatinPower.Server.Models;
 using Microsoft.AspNetCore.Authorization;
@@ -10,6 +11,18 @@ namespace MatinPower.Server.Controllers.Admin
     [Route("[controller]/[action]")]
     public class AdminReportController : BaseController
     {
+        private static (DateTime Start, DateTime End)? GetPersianMonthRange(int? year, int? month)
+        {
+            if (!year.HasValue || !month.HasValue || month.Value < 1 || month.Value > 12)
+                return null;
+
+            var pc = new PersianCalendar();
+            var start = pc.ToDateTime(year.Value, month.Value, 1, 0, 0, 0, 0);
+            var daysInMonth = pc.GetDaysInMonth(year.Value, month.Value);
+            var end = pc.ToDateTime(year.Value, month.Value, daysInMonth, 23, 59, 59, 999);
+            return (start, end);
+        }
+
         [HttpGet]
         public ExecutionResult ContractReport(
             string? search = null,
@@ -83,8 +96,8 @@ namespace MatinPower.Server.Controllers.Admin
             int? statusId = null,
             int? energyTypeId = null,
             bool? isPriceRequest = null,
-            string? fromDate = null,
-            string? toDate = null)
+            int? year = null,
+            int? month = null)
         {
             return RunExceptionProof(() =>
                 Repository<ElectricityOrder>.Query(db =>
@@ -100,11 +113,9 @@ namespace MatinPower.Server.Controllers.Admin
                     if (isPriceRequest.HasValue)
                         query = query.Where(o => o.IsPriceRequest == isPriceRequest.Value);
 
-                    if (!string.IsNullOrEmpty(fromDate) && DateTime.TryParse(fromDate, out var fd))
-                        query = query.Where(o => o.OrderDate >= fd);
-
-                    if (!string.IsNullOrEmpty(toDate) && DateTime.TryParse(toDate, out var td))
-                        query = query.Where(o => o.OrderDate <= td);
+                    var range = GetPersianMonthRange(year, month);
+                    if (range.HasValue)
+                        query = query.Where(o => o.OrderDate >= range.Value.Start && o.OrderDate <= range.Value.End);
 
                     var items = query
                         .OrderByDescending(o => o.OrderDate)
@@ -125,10 +136,15 @@ namespace MatinPower.Server.Controllers.Admin
                             o.StatusId,
                             OrderDate = o.OrderDate != null ? PersianDateConverter.ToPersianDate(o.OrderDate.Value, "yyyy/MM/dd") : null,
                             o.IsPriceRequest,
+                            o.IsGreenEnergy,
                             PaymentCount = o.Payments.Count,
                             PaidAmount = o.Payments.Where(p => p.StatusId == 2).Sum(p => (decimal?)p.Amount) ?? 0,
                         })
                         .ToList();
+
+                    var totalKwh = items.Sum(i => i.RequestedKwh);
+                    var greenKwh = items.Where(i => i.IsGreenEnergy).Sum(i => i.RequestedKwh) * 0.04m;
+                    var normalKwh = totalKwh - greenKwh;
 
                     var summary = new
                     {
@@ -137,7 +153,10 @@ namespace MatinPower.Server.Controllers.Admin
                             .GroupBy(i => new { i.StatusId, i.Status })
                             .Select(g => new { g.Key.StatusId, g.Key.Status, Count = g.Count() })
                             .ToList(),
-                        TotalRequestedKwh = items.Sum(i => i.RequestedKwh),
+                        TotalRequestedKwh = totalKwh,
+                        GreenOrdersCount = items.Count(i => i.IsGreenEnergy),
+                        GreenKwh = greenKwh,
+                        NormalKwh = normalKwh,
                         TotalPaidRial = items.Sum(i => i.PaidAmount),
                     };
 
@@ -149,8 +168,8 @@ namespace MatinPower.Server.Controllers.Admin
         public ExecutionResult PaymentReport(
             int? statusId = null,
             int? methodId = null,
-            string? fromDate = null,
-            string? toDate = null)
+            int? year = null,
+            int? month = null)
         {
             return RunExceptionProof(() =>
                 Repository<Payment>.Query(db =>
@@ -163,11 +182,9 @@ namespace MatinPower.Server.Controllers.Admin
                     if (methodId.HasValue)
                         query = query.Where(p => p.MethodId == methodId.Value);
 
-                    if (!string.IsNullOrEmpty(fromDate) && DateTime.TryParse(fromDate, out var fd))
-                        query = query.Where(p => p.CreatedAt >= fd);
-
-                    if (!string.IsNullOrEmpty(toDate) && DateTime.TryParse(toDate, out var td))
-                        query = query.Where(p => p.CreatedAt <= td);
+                    var range = GetPersianMonthRange(year, month);
+                    if (range.HasValue)
+                        query = query.Where(p => p.CreatedAt >= range.Value.Start && p.CreatedAt <= range.Value.End);
 
                     var items = query
                         .OrderByDescending(p => p.CreatedAt)

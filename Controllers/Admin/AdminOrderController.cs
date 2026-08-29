@@ -14,6 +14,27 @@ namespace MatinPower.Server.Controllers.Admin
     [Route("[controller]/[action]")]
     public class AdminOrderController : BaseController
     {
+        [HttpDelete("{id}")]
+        public ExecutionResult Delete(int id)
+        {
+            if (!new UseContext(new HttpContextAccessor()).IsAdminRole())
+                return new ExecutionResult(ResultType.Danger, "عدم دسترسی", "حذف سفارش فقط برای نقش ادمین مجاز است.", 403);
+
+            var order = Repository<ElectricityOrder>.GetLast(o => o.Id == id);
+            if (order == null)
+                return new ExecutionResult(ResultType.Danger, "یافت نشد", "سفارش مورد نظر یافت نشد.", 404);
+
+            return RunExceptionProof(() =>
+            {
+                // ابتدا پرداخت‌های وابسته حذف می‌شوند تا خطای «اطلاعات وابسته» رخ ندهد
+                var payments = Repository<Payment>.GetListExtended(p => p.OrderId == id);
+                foreach (var payment in payments)
+                    Repository<Payment>.DeleteItem(payment);
+
+                Repository<ElectricityOrder>.DeleteItem(order);
+            });
+        }
+
         [HttpGet]
         public ExecutionResult GetList(int pageNumber = 1, int pageSize = 20, int? statusId = null)
         {
@@ -183,6 +204,11 @@ namespace MatinPower.Server.Controllers.Admin
                         {
                             o.Id,
                             o.RequestedKwh,
+                            o.PriceAtMoment,
+                            o.BillYear,
+                            o.BillMonth,
+                            o.IsGreenEnergy,
+                            SubscriptionId = o.Bill.SubscriptionId,
                             ContractRate = db.Contracts
                                 .Where(c => c.SubscriptionId == o.Bill.SubscriptionId)
                                 .OrderByDescending(c => c.Id)
@@ -211,7 +237,117 @@ namespace MatinPower.Server.Controllers.Admin
 
                 if (order == null)
                     return new ExecutionResult(ResultType.Danger, "یافت نشد", "سفارش مورد نظر یافت نشد.", 404);
-                return new ExecutionResult(ResultType.Success, "موفق", "", 200, order);
+
+                // اگر «نوع انرژی» سفارش خودِ «برق سبز» باشد (نه تیک برق سبز)، این یک محصول جداگانه
+                // است و با نرخ تابلوی سبز بورس (نه نرخ قرارداد) محاسبه می‌شود — همان ماه/سال سفارش،
+                // وگرنه آخرین ماه موجود، و در نهایت (اگر ثبت نشده بود) همان نرخ قرارداد
+                // ۱) نرخ بازار (MarketPeak) برای ماه/سال همین سفارش — یعنی ادمین برای آن ماه نرخ
+                //    ثبت کرده (جدول MonthlyMarketRates)، ۲) وگرنه نرخ مشتق از تحلیل قبض ماه قبل،
+                //    ۳) وگرنه نرخ قرارداد فعال.
+                decimal? rate = null;
+                if (order.BillYear.HasValue && order.BillMonth.HasValue)
+                {
+                    var marketRate = Repository<MonthlyMarketRate>.Query(db =>
+                        db.MonthlyMarketRates
+                            .Where(m => m.Year == order.BillYear && m.Month == order.BillMonth)
+                            .Select(m => (decimal?)m.MarketPeak)
+                            .FirstOrDefault());
+                    if (marketRate.HasValue && marketRate > 0)
+                        rate = marketRate.Value;
+                }
+
+                if ((rate == null || rate <= 0) && order.BillYear.HasValue && order.BillMonth.HasValue)
+                {
+                    int prevMonth = order.BillMonth.Value - 1;
+                    int prevYear  = order.BillYear.Value;
+                    if (prevMonth < 1) { prevMonth = 12; prevYear -= 1; }
+
+                    var prevReport = Repository<BillAnalysisReport>.Query(db =>
+                        db.BillAnalysisReports
+                            .Where(r => r.SubscriptionId == order.SubscriptionId && r.Year == prevYear && r.Month == prevMonth)
+                            .Select(r => new { r.PeakCons, r.MidCons, r.LowCons, r.CostWithMatin })
+                            .FirstOrDefault());
+
+                    if (prevReport != null && prevReport.CostWithMatin.HasValue)
+                    {
+                        var totalKwh = (prevReport.PeakCons ?? 0) + (prevReport.MidCons ?? 0) + (prevReport.LowCons ?? 0);
+                        if (totalKwh > 0)
+                            rate = Math.Round(prevReport.CostWithMatin.Value / totalKwh, 4);
+                    }
+                }
+
+                if (rate == null || rate <= 0)
+                    rate = order.ContractRate;
+
+                bool isGreenType = order.EnergyType != null && order.EnergyType.Contains("سبز");
+                if (isGreenType)
+                {
+                    var boardRate = order.BillYear.HasValue && order.BillMonth.HasValue
+                        ? Repository<MonthlyMarketRate>.Query(db =>
+                            db.MonthlyMarketRates
+                                .Where(m => m.Year == order.BillYear && m.Month == order.BillMonth)
+                                .Select(m => m.GreenBoardRate)
+                                .FirstOrDefault())
+                        : null;
+
+                    if (boardRate == null)
+                        boardRate = Repository<MonthlyMarketRate>.Query(db =>
+                            db.MonthlyMarketRates
+                                .OrderByDescending(m => m.Year).ThenByDescending(m => m.Month)
+                                .Select(m => m.GreenBoardRate)
+                                .FirstOrDefault());
+
+                    if (boardRate.HasValue && boardRate > 0)
+                        rate = boardRate.Value;
+                }
+
+                // نرخ بخش ۴٪ برق سبز (تیک «برق سبز می‌خواهم»): از تابلوی سبز بورس همان ماه/سال
+                // سفارش، وگرنه آخرین ماه موجود، و در نهایت (اگر ثبت نشده بود) همان نرخ سفارش.
+                // ۹۶٪/۴٪ فقط مقدار انرژی را تقسیم می‌کند؛ نرخ هر بخش جداگانه محاسبه می‌شود.
+                decimal? greenRate = null;
+                if (order.IsGreenEnergy)
+                {
+                    greenRate = order.BillYear.HasValue && order.BillMonth.HasValue
+                        ? Repository<MonthlyMarketRate>.Query(db =>
+                            db.MonthlyMarketRates
+                                .Where(m => m.Year == order.BillYear && m.Month == order.BillMonth)
+                                .Select(m => m.GreenBoardRate)
+                                .FirstOrDefault())
+                        : null;
+
+                    if (greenRate == null)
+                        greenRate = Repository<MonthlyMarketRate>.Query(db =>
+                            db.MonthlyMarketRates
+                                .OrderByDescending(m => m.Year).ThenByDescending(m => m.Month)
+                                .Select(m => m.GreenBoardRate)
+                                .FirstOrDefault());
+
+                    if (greenRate == null || greenRate <= 0)
+                        greenRate = rate;
+                }
+
+                var result = new
+                {
+                    order.Id,
+                    order.RequestedKwh,
+                    ContractRate = rate,
+                    order.EnergyType,
+                    order.OrderDate,
+                    order.BillIdentifier,
+                    order.CustomerName,
+                    order.NationalId,
+                    order.EconomicCode,
+                    order.RegisterNumber,
+                    order.CeoFullName,
+                    order.CeoNationalId,
+                    order.Address,
+                    order.City,
+                    order.Province,
+                    order.PostalCode,
+                    order.IsGreenEnergy,
+                    GreenRate = greenRate,
+                };
+                return new ExecutionResult(ResultType.Success, "موفق", "", 200, result);
             }
             catch (Exception ex) { return HandleException(ex); }
         }
@@ -248,20 +384,20 @@ namespace MatinPower.Server.Controllers.Admin
                     .Select(p => new { p.CustomerTypeId })
                     .FirstOrDefault());
 
+            // تعرفه (Tariff) صرفاً برای ثبت اطلاعاتی روی Bill است و در هیچ محاسبه‌ای استفاده نمی‌شود؛
+            // نبودِ آن نباید جلوی ثبت سفارش را بگیرد
             var tariff = Repository<Tariff>.Query(db =>
                 db.Tariffs
                     .Where(t => t.CustomerTypeId == profile!.CustomerTypeId && t.PowerEntitiesId == address.PowerEntityId)
                     .Select(t => new { t.TariffId })
                     .FirstOrDefault());
-            if (tariff == null)
-                return new ExecutionResult(ResultType.Danger, "خطا", "تعرفه‌ای برای این اشتراک یافت نشد.", 404);
 
             try
             {
                 var bill = Repository<Bill>.InsertItem(new Bill
                 {
                     SubscriptionId = req.SubscriptionId,
-                    TariffId = tariff.TariffId,
+                    TariffId = tariff?.TariffId,
                     CreatedAt = DateTime.Now,
                 });
 
@@ -275,6 +411,9 @@ namespace MatinPower.Server.Controllers.Admin
                     StatusId = 1,
                     OrderDate = DateTime.Now,
                     IsPriceRequest = req.IsPriceRequest,
+                    BillYear = req.Year,
+                    BillMonth = req.Month,
+                    IsGreenEnergy = req.IsGreenEnergy,
                 });
 
                 return new ExecutionResult(ResultType.Success, "موفق", "", 200, order.Id.ToString());

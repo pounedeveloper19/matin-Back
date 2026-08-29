@@ -10,7 +10,7 @@ namespace MatinPower.Server.Controllers.Admin
     public class AdminUserManagementController : BaseController
     {
         [HttpGet("List")]
-        public ExecutionResult List(int pageNumber = 1, int pageSize = 20, string? search = null) =>
+        public ExecutionResult List(int pageNumber = 1, int pageSize = 20, string? search = null, string? isActive = null) =>
             RunExceptionProof(() =>
                 Repository<User>.Query(db =>
                 {
@@ -18,6 +18,11 @@ namespace MatinPower.Server.Controllers.Admin
 
                     if (!string.IsNullOrWhiteSpace(search))
                         query = query.Where(u => u.FullName.Contains(search) || u.Mobile.Contains(search));
+
+                    if (isActive == "true")
+                        query = query.Where(u => u.IsActive == true);
+                    else if (isActive == "false")
+                        query = query.Where(u => u.IsActive != true);
 
                     var totalRecords = query.Count();
 
@@ -92,6 +97,17 @@ namespace MatinPower.Server.Controllers.Admin
             {
                 user.IsActive = !(user.IsActive ?? false);
                 Repository<User>.UpdateItem(user);
+
+                // پروفایل مشتری مرتبط هم هم‌زمان همگام می‌شود تا وضعیت «فعال» در همه جا یکسان بماند
+                if (user.CustomerProfileId.HasValue)
+                {
+                    var profile = Repository<CustomerProfile>.GetLast(p => p.Id == user.CustomerProfileId);
+                    if (profile != null && profile.IsActive != user.IsActive)
+                    {
+                        profile.IsActive = user.IsActive;
+                        Repository<CustomerProfile>.UpdateItem(profile);
+                    }
+                }
             });
         }
 

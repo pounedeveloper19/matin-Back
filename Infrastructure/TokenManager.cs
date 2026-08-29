@@ -11,7 +11,7 @@ namespace MatinPower.Infrastructure
         public static string CreateToken(string username, string locationId, string userId)
         {
             DateTime issuedAt = DateTime.Now;
-            DateTime expires = DateTime.Now.AddDays(1);
+            DateTime expires = DateTime.Now.AddHours(2);
 
             var tokenHandler = new JwtSecurityTokenHandler();
 

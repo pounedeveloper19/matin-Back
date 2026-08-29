@@ -23,6 +23,12 @@ public partial class ElectricityOrder
 
     public bool IsPriceRequest { get; set; }
 
+    public int? BillYear { get; set; }
+
+    public int? BillMonth { get; set; }
+
+    public bool IsGreenEnergy { get; set; }
+
     public virtual Bill Bill { get; set; } = null!;
 
     public virtual EnumEnergyType EnergyType { get; set; } = null!;

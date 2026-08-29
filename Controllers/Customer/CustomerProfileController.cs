@@ -216,6 +216,104 @@ namespace MatinPower.Server.Controllers.Customer
                     return;
                 profile.TariffCodeOptionId = request.TariffCodeOptionId;
                 Repository<CustomerProfile>.UpdateItem(profile);
+
+                // ثبت تاریخچه: تعرفه از این ماه/سال شمسی به بعد همین مقدار است.
+                // اگر همین ماه قبلاً یک انتخاب داشته، جایگزین می‌شود (نه رکورد جدید)
+                // تا تحلیل ماه‌های قبلی همچنان با تعرفه‌ی واقعاً معتبر آن‌ها انجام شود.
+                if (request.TariffCodeOptionId.HasValue)
+                {
+                    var pc = new System.Globalization.PersianCalendar();
+                    var now = DateTime.Now;
+                    int year = pc.GetYear(now), month = pc.GetMonth(now);
+
+                    var existing = Repository<CustomerTariffOptionHistory>.GetLast(h =>
+                        h.CustomerProfileId == customerId.Value && h.EffectiveYear == year && h.EffectiveMonth == month);
+
+                    if (existing != null)
+                    {
+                        existing.TariffCodeOptionId = request.TariffCodeOptionId.Value;
+                        Repository<CustomerTariffOptionHistory>.UpdateItem(existing);
+                    }
+                    else
+                    {
+                        Repository<CustomerTariffOptionHistory>.InsertItem(new CustomerTariffOptionHistory
+                        {
+                            CustomerProfileId = customerId.Value,
+                            TariffCodeOptionId = request.TariffCodeOptionId.Value,
+                            EffectiveYear = year,
+                            EffectiveMonth = month,
+                            CreatedAt = DateTime.Now,
+                        });
+                    }
+                }
+            });
+        }
+
+        [HttpGet]
+        [Route("[controller]/GetTariffForMonth/{year}/{month}")]
+        public ExecutionResult GetTariffForMonth(int year, int month)
+        {
+            var customerId = GetCustomerProfileId();
+            if (customerId == null)
+                return new ExecutionResult(ResultType.Danger, "خطا", "کاربر احراز هویت نشده.", 401);
+
+            if (month < 1 || month > 12)
+                return new ExecutionResult(ResultType.Danger, "خطای ورود", "ماه باید بین ۱ تا ۱۲ باشد.", 400);
+
+            return RunExceptionProof(() =>
+            {
+                var optionId = TariffResolver.ResolveTariffCodeOptionId(customerId.Value, year, month);
+                if (optionId == null)
+                    return (object)null;
+
+                var option = Repository<TariffCodeOption>.GetListExtended(i => i.Id == optionId.Value,
+                    includes: new[] { "TariffCode" }).LastOrDefault();
+
+                return (object)new
+                {
+                    tariffCodeOptionId    = option?.Id,
+                    tariffCodeId          = option?.TariffCodeId,
+                    tariffCodeTitle       = option?.TariffCode?.Title,
+                    tariffCodeOptionTitle = option?.Title,
+                };
+            });
+        }
+
+        [HttpPut]
+        [Route("[controller]/SetTariffForMonth")]
+        public ExecutionResult SetTariffForMonth([FromBody] SetTariffForMonthRequest request)
+        {
+            var customerId = GetCustomerProfileId();
+            if (customerId == null)
+                return new ExecutionResult(ResultType.Danger, "خطا", "کاربر احراز هویت نشده.", 401);
+
+            if (request.Month < 1 || request.Month > 12)
+                return new ExecutionResult(ResultType.Danger, "خطای ورود", "ماه باید بین ۱ تا ۱۲ باشد.", 400);
+
+            return RunExceptionProof(() =>
+            {
+                // ثبت/جایگزینی تاریخچه: تعرفه از این ماه/سال شمسی مشخص به بعد همین مقدار
+                // است — مستقل از «کد تعرفه» پروفایل که فقط پیش‌فرض زنده (ماه جاری به بعد) را نگه می‌دارد.
+                var existing = Repository<CustomerTariffOptionHistory>.GetLast(h =>
+                    h.CustomerProfileId == customerId.Value &&
+                    h.EffectiveYear == request.Year && h.EffectiveMonth == request.Month);
+
+                if (existing != null)
+                {
+                    existing.TariffCodeOptionId = request.TariffCodeOptionId;
+                    Repository<CustomerTariffOptionHistory>.UpdateItem(existing);
+                }
+                else
+                {
+                    Repository<CustomerTariffOptionHistory>.InsertItem(new CustomerTariffOptionHistory
+                    {
+                        CustomerProfileId  = customerId.Value,
+                        TariffCodeOptionId = request.TariffCodeOptionId,
+                        EffectiveYear      = request.Year,
+                        EffectiveMonth     = request.Month,
+                        CreatedAt          = DateTime.Now,
+                    });
+                }
             });
         }
 

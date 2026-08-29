@@ -21,6 +21,7 @@ namespace MatinPower.Server.Controllers.Admin
                 i.CustomerProfile.IsActive,
                 i.CustomerProfile.FamiliarityType,
                 i.CustomerProfile.CustomerTypeId,
+                CreatedAt = PersianDateConverter.ToPersianDate(i.CreatedAt, "yyyy/MM/dd"),
             }, filter, predicate, sortExpression: "CreatedAt", sortDirection: System.Web.Helpers.SortDirection.Descending, includes: new[] { "CustomerProfile" });
 
             return new PaginationResult(result.Item1, filter.PageNumber, filter.PageSize, result.Item2, result.Item3, result.Item4);
@@ -62,11 +63,11 @@ namespace MatinPower.Server.Controllers.Admin
             if (string.IsNullOrWhiteSpace(item.Password))
                 return new ExecutionResult(ResultType.Danger, "خطای ورود اطلاعات", "رمز عبور نماینده الزامی است.", 400);
 
-            var existCustomer = Repository<Models.CustomersLegal>.GetLast(i => i.NationalId == item.NationalId);
+            var existCustomer = Repository<Models.CustomersLegal>.GetLast(i => i.NationalId == item.NationalId && i.CustomerProfile.IsActive == true);
             if (existCustomer != null)
                 return new ExecutionResult(ResultType.Danger, "خطای ورود اطلاعات", "این شناسه ملی قبلا در سیستم ثبت شده است.", 5000);
 
-            var existUser = Repository<User>.GetLast(i => i.Mobile == item.AgentMobile);
+            var existUser = Repository<User>.GetLast(i => i.Mobile == item.AgentMobile && i.IsActive == true);
             if (existUser != null)
                 return new ExecutionResult(ResultType.Danger, "خطای ورود اطلاعات", "این شماره موبایل نماینده قبلاً در سیستم ثبت شده است.", 400);
 
@@ -116,7 +117,7 @@ namespace MatinPower.Server.Controllers.Admin
 
         protected override Models.CustomersLegal PrepareUpdateItem(Models.CustomersLegal item)
         {
-            var duplicate = Repository<Models.CustomersLegal>.GetLast(i => i.NationalId == item.NationalId && i.Id != item.Id);
+            var duplicate = Repository<Models.CustomersLegal>.GetLast(i => i.NationalId == item.NationalId && i.Id != item.Id && i.CustomerProfile.IsActive == true);
             if (duplicate != null)
                 throw new Exception("این شناسه ملی قبلاً در سیستم ثبت شده است.");
 
@@ -127,6 +128,14 @@ namespace MatinPower.Server.Controllers.Admin
                 if ((item.FamiliarityType ?? 0) > 0)
                     profile.FamiliarityType = item.FamiliarityType;
                 Repository<CustomerProfile>.UpdateItem(profile);
+
+                // کاربر نماینده هم باید هم‌زمان با پروفایل مشتری فعال/غیرفعال شود تا امکان ورود با وضعیت واقعی مغایرت نداشته باشد
+                var linkedUser = Repository<User>.GetLast(u => u.CustomerProfileId == item.Id);
+                if (linkedUser != null && linkedUser.IsActive != profile.IsActive)
+                {
+                    linkedUser.IsActive = profile.IsActive;
+                    Repository<User>.UpdateItem(linkedUser);
+                }
             }
 
             var existing = Repository<Models.CustomersLegal>.GetItemById(item.Id);
@@ -145,19 +154,21 @@ namespace MatinPower.Server.Controllers.Admin
         [HttpDelete]
         public override ExecutionResult Delete(int id)
         {
-            var hasAddress = Repository<Address>.GetLast(i => i.CustomerProfileId == id) != null;
-            if (hasAddress)
-                return new ExecutionResult(ResultType.Danger, "خطا", "این مشتری دارای آدرس یا انشعاب فعال است. ابتدا اطلاعات وابسته را حذف کنید.", 400);
-
             return RunExceptionProof(() =>
             {
-                var entity = Repository<Models.CustomersLegal>.GetItemById(id);
-                if (entity != null)
-                    Repository<Models.CustomersLegal>.DeleteItem(entity);
-
                 var profile = Repository<CustomerProfile>.GetItemById(id);
                 if (profile != null)
-                    Repository<CustomerProfile>.DeleteItem(profile);
+                {
+                    profile.IsActive = false;
+                    Repository<CustomerProfile>.UpdateItem(profile);
+                }
+
+                var linkedUser = Repository<User>.GetLast(u => u.CustomerProfileId == id);
+                if (linkedUser != null)
+                {
+                    linkedUser.IsActive = false;
+                    Repository<User>.UpdateItem(linkedUser);
+                }
             });
         }
     }

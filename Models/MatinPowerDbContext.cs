@@ -33,6 +33,8 @@ public partial class MatinPowerDbContext : DbContext
 
     public virtual DbSet<CustomerProfile> CustomerProfiles { get; set; }
 
+    public virtual DbSet<CustomerTariffOptionHistory> CustomerTariffOptionHistories { get; set; }
+
     public virtual DbSet<CustomersLegal> CustomersLegals { get; set; }
 
     public virtual DbSet<CustomersReal> CustomersReals { get; set; }
@@ -290,10 +292,28 @@ public partial class MatinPowerDbContext : DbContext
                 .HasForeignKey(d => d.FamiliarityType);
         });
 
+        modelBuilder.Entity<CustomerTariffOptionHistory>(entity =>
+        {
+            entity.ToTable("CustomerTariffOptionHistory");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.CreatedAt).HasDefaultValueSql("(getdate())");
+
+            entity.HasOne(d => d.CustomerProfile)
+                  .WithMany()
+                  .HasForeignKey(d => d.CustomerProfileId)
+                  .OnDelete(DeleteBehavior.ClientSetNull);
+
+            entity.HasOne(d => d.TariffCodeOption)
+                  .WithMany()
+                  .HasForeignKey(d => d.TariffCodeOptionId)
+                  .OnDelete(DeleteBehavior.ClientSetNull);
+        });
+
         modelBuilder.Entity<CustomersLegal>(entity =>
         {
             entity.ToTable("Customers_Legal");
-            entity.HasIndex(e => e.NationalId).IsUnique();
+            // یکتایی مطلق نیست: IsActive روی CustomerProfile است، پس یکتایی بین مشتریان فعال فقط در اپلیکیشن چک می‌شود
+            entity.HasIndex(e => e.NationalId, "IX_Customers_Legal_NationalId");
             entity.Property(e => e.CeoFullName).HasMaxLength(100).HasColumnName("CEO_FullName");
             entity.Property(e => e.CeoMobile).HasMaxLength(11).HasColumnName("CEO_Mobile");
             entity.Property(e => e.CompanyName).HasMaxLength(200);
@@ -310,7 +330,8 @@ public partial class MatinPowerDbContext : DbContext
         modelBuilder.Entity<CustomersReal>(entity =>
         {
             entity.ToTable("Customers_Real");
-            entity.HasIndex(e => e.NationalCode).IsUnique();
+            // یکتایی مطلق نیست: IsActive روی CustomerProfile است، پس یکتایی بین مشتریان فعال فقط در اپلیکیشن چک می‌شود
+            entity.HasIndex(e => e.NationalCode, "IX_Customers_Real_NationalCode");
             entity.Property(e => e.CreatedAt).HasDefaultValueSql("(getdate())");
             entity.Property(e => e.FirstName).HasMaxLength(150);
             entity.Property(e => e.LastName).HasMaxLength(150);
@@ -685,7 +706,8 @@ public partial class MatinPowerDbContext : DbContext
         {
             entity.HasKey(e => e.Id).HasName("PK__Users__3214EC07ABC057CA");
 
-            entity.HasIndex(e => e.Mobile, "UQ__Users__6FAE0782AD5AB5C4").IsUnique();
+            // یکتا فقط بین کاربران فعال؛ کاربر غیرفعال می‌تواند موبایلش دوباره برای ثبت‌نام جدید استفاده شود
+            entity.HasIndex(e => e.Mobile, "UQ_Users_Mobile_ActiveOnly").IsUnique().HasFilter("([IsActive]=(1))");
 
             entity.Property(e => e.FullName).HasMaxLength(200);
             entity.Property(e => e.IsActive).HasDefaultValue(true);

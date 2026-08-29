@@ -2,6 +2,7 @@
 using MatinPower.Infrastructure.Filter;
 using MatinPower.Server.Models;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using System.Linq.Expressions;
 using TicketManagement.Infrastructure;
 using Contract = MatinPower.Server.Models.Contract;
@@ -10,16 +11,48 @@ namespace MatinPower.Server.Controllers.Admin
 {
     public class AdminContractController : BaseManageController<Contract>
     {
+        public override ExecutionResult Delete(int id)
+        {
+            if (!new UseContext(new HttpContextAccessor()).IsAdminRole())
+                return new ExecutionResult(ResultType.Danger, "عدم دسترسی", "حذف قرارداد فقط برای نقش ادمین مجاز است.", 403);
+
+            return RunExceptionProof(() =>
+            {
+                // ابتدا ضمانت‌نامه‌های وابسته حذف می‌شوند تا خطای «اطلاعات وابسته» رخ ندهد
+                var warranties = Repository<Warranty>.GetListExtended(w => w.ContractId == id);
+                foreach (var warranty in warranties)
+                    Repository<Warranty>.DeleteItem(warranty);
+
+                var contract = GetItem(id);
+                contract = PrepareDeleteItem(contract);
+                Repository<Contract>.DeleteItem(contract);
+                DataChanged(contract, EntityState.Deleted);
+            });
+        }
+
         protected override PaginationResult GridDataSource(Expression<Func<Contract, bool>> predicate, PaginationFilter filter)
         {
+            // نکته: هر سطح از این زنجیره (Subscription/Address/CustomerProfile) به‌صورت شرطی چک می‌شود
+            // تا اگر جایی از زنجیره ناقص/نامعتبر بود، خودِ قرارداد از لیست حذف نشود (به‌جاش نام مشتری خالی می‌ماند)
             var result = Repository<Contract>.GetSelectiveListWithPaging(i => new
             {
                 i.Id,
-                CustomerNationalId = i.Subscription.Address.CustomerProfile.CustomersLegal.NationalId
-                    ?? i.Subscription.Address.CustomerProfile.CustomersReal.NationalCode,
-                CustomerName = i.Subscription.Address.CustomerProfile.CustomersLegal.CompanyName
-                    ?? (i.Subscription.Address.CustomerProfile.CustomersReal.FirstName + " " + i.Subscription.Address.CustomerProfile.CustomersReal.LastName),
-                Status = i.Status.Title,
+                CustomerNationalId = i.Subscription != null && i.Subscription.Address != null && i.Subscription.Address.CustomerProfile != null
+                    ? (i.Subscription.Address.CustomerProfile.CustomersLegal != null
+                        ? i.Subscription.Address.CustomerProfile.CustomersLegal.NationalId
+                        : i.Subscription.Address.CustomerProfile.CustomersReal != null
+                            ? i.Subscription.Address.CustomerProfile.CustomersReal.NationalCode
+                            : null)
+                    : null,
+                CustomerName = i.Subscription != null && i.Subscription.Address != null && i.Subscription.Address.CustomerProfile != null
+                    ? (i.Subscription.Address.CustomerProfile.CustomersLegal != null
+                        ? i.Subscription.Address.CustomerProfile.CustomersLegal.CompanyName
+                        : i.Subscription.Address.CustomerProfile.CustomersReal != null
+                            ? (i.Subscription.Address.CustomerProfile.CustomersReal.FirstName + " " + i.Subscription.Address.CustomerProfile.CustomersReal.LastName)
+                            : null)
+                    : null,
+                Status = i.Status != null ? i.Status.Title : null,
+                i.StatusId,
                 i.ContractNumber,
                 StartDate = PersianDateConverter.ToPersianDate(i.StartDate, "yyyy/MM/dd"),
                 EndDate = PersianDateConverter.ToPersianDate(i.EndDate, "yyyy/MM/dd"),
@@ -28,7 +61,7 @@ namespace MatinPower.Server.Controllers.Admin
                 i.ContractVolumeKwh,
                 i.ContractAmountRial,
                 PaymentDeadline = i.PaymentDeadline.HasValue ? PersianDateConverter.ToPersianDate(i.PaymentDeadline.Value,("yyyy-MM-dd")) : null,
-            }, filter, predicate, sortExpression: "StartDate", sortDirection: System.Web.Helpers.SortDirection.Descending,
+            }, filter, predicate, sortExpression: "Id", sortDirection: System.Web.Helpers.SortDirection.Descending,
             includes: new[] { "Warranties", "Subscription.Address.CustomerProfile.CustomersLegal", "Subscription.Address.CustomerProfile.CustomersReal", "Status" });
 
             return new PaginationResult(result.Item1, filter.PageNumber, filter.PageSize, result.Item2, result.Item3, result.Item4);
@@ -70,6 +103,8 @@ namespace MatinPower.Server.Controllers.Admin
                 return ExecutionResult.Failure;
             return RunExceptionProof(() =>
             {
+                // حجم درخواستی همیشه سمت سرور از قدرت درخواستی محاسبه می‌شود (نه مقدار ارسالی کلاینت)
+                // تا هرگز از CK_Contract_VolumeNotExceedCapacity در دیتابیس تخطی نکند
                 var contract = Repository<Contract>.InsertItem(new Contract
                 {
                     ContractRate       = item.ContractRate,
@@ -78,7 +113,7 @@ namespace MatinPower.Server.Controllers.Admin
                     StatusId           = 1,
                     SubscriptionId     = item.SubscriptionId,
                     ContractPowerKw    = item.ContractPowerKw,
-                    ContractVolumeKwh  = item.ContractVolumeKwh,
+                    ContractVolumeKwh  = item.ContractPowerKw > 0 ? item.ContractPowerKw * 8760 : null,
                     ContractAmountRial = item.ContractAmountRial,
                     PaymentDeadline    = item.PaymentDeadline,
                 });
@@ -116,6 +151,7 @@ namespace MatinPower.Server.Controllers.Admin
                             StartDate  = PersianDateConverter.ToPersianDate(x.StartDate, "yyyy/MM/dd"),
                             EndDate    = PersianDateConverter.ToPersianDate(x.EndDate,   "yyyy/MM/dd"),
                             Status     = x.Status.Title,
+                            x.StatusId,
                             Subscription = x.Subscription.BillIdentifier,
                             Address    = x.Subscription.Address.MainAddress,
                             PostalCode = x.Subscription.Address.PostalCode,

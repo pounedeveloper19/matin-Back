@@ -55,6 +55,52 @@ namespace MatinPower.Server.Controllers.Customer
         }
 
         [HttpPost]
+        [Route("[controller]/CreateContract")]
+        public ExecutionResult CreateContract([FromBody] CreateContractRequest request)
+        {
+            var customerId = GetCustomerProfileId();
+            if (customerId == null)
+                return new ExecutionResult(ResultType.Danger, "خطا", "کاربر احراز هویت نشده.", 401);
+
+            if ((request.ContractPowerKw ?? 0) <= 0)
+                return new ExecutionResult(ResultType.Danger, "خطای ورود اطلاعات", "قدرت درخواستی (kW) را وارد کنید.", 400);
+
+            if (request.StartDate.HasValue && request.EndDate.HasValue && request.StartDate.Value > request.EndDate.Value)
+                return new ExecutionResult(ResultType.Danger, "خطای ورود اطلاعات", "تاریخ پایان باید بعد از تاریخ شروع باشد.", 400);
+
+            var subscription = Repository<Subscription>.Query(db =>
+                db.Subscriptions
+                    .Where(s => s.Id == request.SubscriptionId && s.Address.CustomerProfileId == customerId.Value)
+                    .Select(s => new { s.Id })
+                    .FirstOrDefault());
+            if (subscription == null)
+                return new ExecutionResult(ResultType.Danger, "خطا", "اشتراک یافت نشد.", 404);
+
+            return RunExceptionProof(() =>
+            {
+                // حجم درخواستی همیشه سمت سرور از قدرت درخواستی محاسبه می‌شود (نه مقدار ارسالی کلاینت)
+                // تا هرگز از CK_Contract_VolumeNotExceedCapacity در دیتابیس تخطی نکند
+                var contract = Repository<Contract>.InsertItem(new Contract
+                {
+                    SubscriptionId = request.SubscriptionId,
+                    ContractRate = 0,
+                    ContractPowerKw = request.ContractPowerKw,
+                    ContractVolumeKwh = request.ContractPowerKw * 8760,
+                    StartDate = request.StartDate,
+                    EndDate = request.EndDate,
+                    StatusId = 1,
+                });
+
+                var pc = new System.Globalization.PersianCalendar();
+                var now = DateTime.Now;
+                contract.ContractNumber = $"CNT-{pc.GetYear(now)}{pc.GetMonth(now):00}-{contract.Id:00000}";
+                Repository<Contract>.UpdateItem(contract);
+
+                return (object)contract.Id;
+            });
+        }
+
+        [HttpPost]
         [Route("[controller]/SubmitWarranty")]
         public ExecutionResult SubmitWarranty([FromBody] SubmitWarrantyRequest request)
         {

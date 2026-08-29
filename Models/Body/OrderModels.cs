@@ -6,6 +6,9 @@ namespace MatinPower.Server.Models.Body
         public decimal RequestedKwh { get; set; }
         public int EnergyTypeId { get; set; }
         public bool IsPriceRequest { get; set; } = false;
+        public int? Year { get; set; }
+        public int? Month { get; set; }
+        public bool IsGreenEnergy { get; set; } = false;
     }
 
     public class SubmitPaymentRequest
